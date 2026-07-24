@@ -69,3 +69,29 @@ func TestRunStoreLifecycle(t *testing.T) {
 		t.Fatalf("LatestSnapshot: %+v, err=%v", latest, err)
 	}
 }
+
+// TestListXXXNeverReturnsNilSlice guards against a real bug found via e2e testing:
+// a bare `var out []T` scanned zero times is nil, and encoding/json encodes a nil
+// slice as `null`, not `[]` -- which crashes frontend code doing `list.length`.
+func TestListTestsNeverReturnsNilSlice(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	// A run with no snapshots is the reliable way to force a zero-row result
+	// without needing to truncate tables shared with other tests.
+	tst := &model.Test{Name: "empty-list-check", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
+	_ = db.CreateTest(ctx, tst)
+	run := &model.Run{TestID: tst.ID, Status: model.RunPending}
+	_ = db.CreateRun(ctx, run)
+
+	snapshots, err := db.ListSnapshots(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("ListSnapshots: %v", err)
+	}
+	if snapshots == nil {
+		t.Fatal("expected ListSnapshots to return a non-nil empty slice, got nil")
+	}
+	if len(snapshots) != 0 {
+		t.Fatalf("expected 0 snapshots, got %d", len(snapshots))
+	}
+}

@@ -52,7 +52,7 @@ func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []model.Test
+	out := []model.Test{}
 	for rows.Next() {
 		var t model.Test
 		if err := rows.Scan(&t.ID, &t.Name, &t.TargetURL, &t.VirtualUsers, &t.DurationSeconds, &t.CreatedAt); err != nil {
@@ -141,7 +141,7 @@ func (db *DB) ListSnapshots(ctx context.Context, runID string) ([]model.RunMetri
 		return nil, err
 	}
 	defer rows.Close()
-	var out []model.RunMetricSnapshot
+	out := []model.RunMetricSnapshot{}
 	for rows.Next() {
 		var s model.RunMetricSnapshot
 		if err := rows.Scan(&s.ID, &s.RunID, &s.Ts, &s.ElapsedSeconds, &s.ThroughputRPS, &s.AvgResponseTimeMs, &s.ErrorRatePct, &s.SampleCount); err != nil {

@@ -53,7 +53,8 @@ async function unwrap<T>(res: Response): Promise<T> {
 }
 
 export async function listTests(): Promise<Test[]> {
-  return unwrap(await fetch(`${API_URL}/api/tests`, { cache: 'no-store' }));
+  const tests = await unwrap<Test[]>(await fetch(`${API_URL}/api/tests`, { cache: 'no-store' }));
+  return tests ?? [];
 }
 
 export async function createTest(input: CreateTestInput): Promise<Test> {
