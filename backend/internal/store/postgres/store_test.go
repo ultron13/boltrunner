@@ -2,11 +2,13 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/boltrunner/backend/internal/model"
+	"github.com/boltrunner/backend/internal/store"
 )
 
 func setupDB(t *testing.T) *DB {
@@ -152,5 +154,202 @@ func TestListByTestNewestFirstAndNeverNil(t *testing.T) {
 	}
 	if runs[0].ID != newer.ID || runs[1].ID != older.ID {
 		t.Fatalf("expected newest-first order, got %s then %s", runs[0].ID, runs[1].ID)
+	}
+}
+
+func TestListTestsReturnsCreatedTest(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "list-tests-check", TargetURL: "http://example.com", VirtualUsers: 2, DurationSeconds: 5}
+	if err := db.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	all, err := db.ListTests(ctx)
+	if err != nil {
+		t.Fatalf("ListTests: %v", err)
+	}
+	if all == nil {
+		t.Fatal("expected a non-nil slice")
+	}
+	found := false
+	for _, got := range all {
+		if got.ID == tst.ID {
+			found = true
+			if got.Name != "list-tests-check" {
+				t.Fatalf("unexpected name: %q", got.Name)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected to find created test %s in ListTests result", tst.ID)
+	}
+}
+
+func TestGetTestNotFound(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	_, err := db.GetTest(ctx, "00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestGetRunNotFound(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	_, err := db.GetRun(ctx, "00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestUpdateRunStatusNotFound(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	err := db.UpdateRunStatus(ctx, "00000000-0000-0000-0000-000000000000", model.RunRunning, "")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestUpdateRunStatusCompletedSetsCompletedAt(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = db.CreateTest(ctx, tst)
+	run := &model.Run{TestID: tst.ID, Status: model.RunPending}
+	if err := db.CreateRun(ctx, run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	if err := db.UpdateRunStatus(ctx, run.ID, model.RunCompleted, ""); err != nil {
+		t.Fatalf("UpdateRunStatus: %v", err)
+	}
+
+	got, err := db.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.Status != model.RunCompleted {
+		t.Fatalf("expected completed status, got %s", got.Status)
+	}
+	if got.CompletedAt == nil {
+		t.Fatal("expected CompletedAt to be set")
+	}
+}
+
+func TestListSnapshotsReturnsAppendedSnapshotsInOrder(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = db.CreateTest(ctx, tst)
+	run := &model.Run{TestID: tst.ID, Status: model.RunRunning}
+	_ = db.CreateRun(ctx, run)
+
+	first := &model.RunMetricSnapshot{RunID: run.ID, ElapsedSeconds: 1, ThroughputRPS: 1, SampleCount: 1}
+	if err := db.AppendMetricSnapshot(ctx, first); err != nil {
+		t.Fatalf("AppendMetricSnapshot: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	second := &model.RunMetricSnapshot{RunID: run.ID, ElapsedSeconds: 2, ThroughputRPS: 2, SampleCount: 2}
+	if err := db.AppendMetricSnapshot(ctx, second); err != nil {
+		t.Fatalf("AppendMetricSnapshot: %v", err)
+	}
+
+	snapshots, err := db.ListSnapshots(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("ListSnapshots: %v", err)
+	}
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(snapshots))
+	}
+	if snapshots[0].ID != first.ID || snapshots[1].ID != second.ID {
+		t.Fatalf("expected ascending ts order, got %s then %s", snapshots[0].ID, snapshots[1].ID)
+	}
+}
+
+// The following tests use an already-cancelled context to force the
+// underlying pgx query/exec call to fail without needing to corrupt the
+// schema or database connection: this exercises the "unexpected query
+// error" (as opposed to not-found) branches that success-path tests can't
+// reach.
+
+func TestMigrateFailsWithCancelledContext(t *testing.T) {
+	dsn := os.Getenv("BOLTRUNNER_TEST_DSN")
+	if dsn == "" {
+		t.Skip("BOLTRUNNER_TEST_DSN not set; skipping (requires a live Postgres)")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	db, err := Connect(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer db.Close()
+	cancel()
+
+	if err := db.Migrate(ctx); err == nil {
+		t.Fatal("expected an error when migrating with a cancelled context")
+	}
+}
+
+func TestListTestsFailsWithCancelledContext(t *testing.T) {
+	db := setupDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := db.ListTests(ctx); err == nil {
+		t.Fatal("expected an error when listing tests with a cancelled context")
+	}
+}
+
+func TestListByTestFailsWithCancelledContext(t *testing.T) {
+	db := setupDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := db.ListByTest(ctx, "any-test-id"); err == nil {
+		t.Fatal("expected an error when listing runs with a cancelled context")
+	}
+}
+
+func TestUpdateRunStatusFailsWithCancelledContext(t *testing.T) {
+	db := setupDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := db.UpdateRunStatus(ctx, "any-run-id", model.RunRunning, ""); err == nil {
+		t.Fatal("expected an error when updating run status with a cancelled context")
+	}
+}
+
+func TestListSnapshotsFailsWithCancelledContext(t *testing.T) {
+	db := setupDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := db.ListSnapshots(ctx, "any-run-id"); err == nil {
+		t.Fatal("expected an error when listing snapshots with a cancelled context")
+	}
+}
+
+func TestLatestSnapshotNotFound(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = db.CreateTest(ctx, tst)
+	run := &model.Run{TestID: tst.ID, Status: model.RunPending}
+	_ = db.CreateRun(ctx, run)
+
+	_, err := db.LatestSnapshot(ctx, run.ID)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

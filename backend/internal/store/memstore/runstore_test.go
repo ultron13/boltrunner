@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/boltrunner/backend/internal/model"
+	"github.com/boltrunner/backend/internal/store"
 )
 
 func TestRunStoreLifecycle(t *testing.T) {
@@ -89,5 +90,34 @@ func TestListByTestReturnsEmptySliceNotNil(t *testing.T) {
 	}
 	if len(runs) != 0 {
 		t.Fatalf("expected 0 runs, got %d", len(runs))
+	}
+}
+
+func TestGetRunNotFound(t *testing.T) {
+	s := NewRunStore()
+	if _, err := s.GetRun(context.Background(), "missing"); err != store.ErrNotFound {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestUpdateRunStatusNotFound(t *testing.T) {
+	s := NewRunStore()
+	if err := s.UpdateRunStatus(context.Background(), "missing", model.RunRunning, ""); err != store.ErrNotFound {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestAppendMetricSnapshotNotFound(t *testing.T) {
+	s := NewRunStore()
+	snap := &model.RunMetricSnapshot{RunID: "missing", ElapsedSeconds: 1}
+	if err := s.AppendMetricSnapshot(context.Background(), snap); err != store.ErrNotFound {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestLatestSnapshotNotFound(t *testing.T) {
+	s := NewRunStore()
+	if _, err := s.LatestSnapshot(context.Background(), "missing"); err != store.ErrNotFound {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

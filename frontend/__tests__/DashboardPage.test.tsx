@@ -51,4 +51,16 @@ describe('DashboardPage', () => {
     const activeTile = await screen.findByText('Active Runs');
     expect(activeTile.closest('div')?.textContent).toContain('0');
   });
+
+  it('shows an empty dashboard when listTests itself fails', async () => {
+    vi.spyOn(api, 'listTests').mockRejectedValue(new Error('boom'));
+
+    render(<DashboardPage />);
+
+    expect(await screen.findByText('No tests yet — create one above.')).toBeInTheDocument();
+    const totalTile = await screen.findByText('Total Tests');
+    expect(totalTile.closest('div')?.textContent).toContain('0');
+    const activeTile = await screen.findByText('Active Runs');
+    expect(activeTile.closest('div')?.textContent).toContain('0');
+  });
 });

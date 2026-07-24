@@ -1,15 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@/components/ui/theme';
 import { Shell } from '@/components/ui/Shell';
 import * as api from '@/lib/api-client';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/',
-  useSearchParams: () => new URLSearchParams(),
+  usePathname: vi.fn(() => '/'),
+  useSearchParams: vi.fn(() => new URLSearchParams()),
 }));
 
 describe('Shell', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('renders the top nav, tree nav, breadcrumb and children', async () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([
       { id: '1', name: 'Checkout Load', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
@@ -39,5 +44,89 @@ describe('Shell', () => {
       </ThemeProvider>
     );
     expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Default');
+  });
+
+  it('shows a still-usable page when listTests fails', async () => {
+    vi.spyOn(api, 'listTests').mockRejectedValue(new Error('boom'));
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>page content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    expect(await screen.findByText('page content')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Default');
+  });
+
+  it('shows an Admin breadcrumb on the admin path', async () => {
+    vi.mocked(usePathname).mockReturnValue('/admin');
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>admin content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Admin');
+  });
+
+  it('shows a Test Runs breadcrumb on the history path with no testId', async () => {
+    vi.mocked(usePathname).mockReturnValue('/history');
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>history content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Test Runs');
+  });
+
+  it('shows the test name in the breadcrumb on the history path with a known testId', async () => {
+    vi.mocked(usePathname).mockReturnValue('/history');
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('testId=1'));
+    vi.spyOn(api, 'listTests').mockResolvedValue([
+      { id: '1', name: 'Checkout Load', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
+    ]);
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>history content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Checkout Load');
+  });
+
+  it('falls back to the raw testId in the breadcrumb when the test is unknown', async () => {
+    vi.mocked(usePathname).mockReturnValue('/history');
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('testId=unknown-id'));
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>history content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('unknown-id');
+  });
+
+  it('shows a Run breadcrumb on a run detail path', async () => {
+    vi.mocked(usePathname).mockReturnValue('/runs/r1');
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>run content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Run r1');
   });
 });

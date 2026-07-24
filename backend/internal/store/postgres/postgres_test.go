@@ -22,3 +22,23 @@ func TestConnectAndMigrate(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 }
+
+func TestConnectMalformedDSN(t *testing.T) {
+	ctx := context.Background()
+	// pgxpool.New parses the DSN before ever dialing; an unparseable
+	// connection string fails fast with no network access required.
+	_, err := Connect(ctx, "not-a-valid-dsn://::::")
+	if err == nil {
+		t.Fatal("expected an error for a malformed DSN")
+	}
+}
+
+func TestConnectPingFailure(t *testing.T) {
+	ctx := context.Background()
+	// A syntactically valid DSN pointing at a closed local port fails at the
+	// Ping step rather than DSN parsing.
+	_, err := Connect(ctx, "postgres://user:pass@127.0.0.1:1/nosuchdb?sslmode=disable&connect_timeout=1")
+	if err == nil {
+		t.Fatal("expected an error when the target refuses connections")
+	}
+}

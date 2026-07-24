@@ -62,6 +62,27 @@ func TestAggregate(t *testing.T) {
 	}
 }
 
+func TestParseLineTooFewFields(t *testing.T) {
+	_, ok, err := ParseLine("1690000000000,214,not,enough,fields")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatal("expected a short line to be skipped (ok=false)")
+	}
+}
+
+func TestParseLineMalformedElapsed(t *testing.T) {
+	line := "1690000000000,not-a-number,BoltRunner Request,200,OK,Thread Group 1-1,text,true"
+	_, ok, err := ParseLine(line)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatal("expected a malformed elapsed field to be skipped (ok=false)")
+	}
+}
+
 func TestAggregateEmpty(t *testing.T) {
 	agg := Aggregate(nil, 1.0)
 	if agg.SampleCount != 0 || agg.ThroughputRPS != 0 || agg.AvgResponseTimeMs != 0 || agg.ErrorRatePct != 0 {

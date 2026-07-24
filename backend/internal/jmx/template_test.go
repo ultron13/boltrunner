@@ -37,3 +37,20 @@ func TestGenerateRejectsInvalidURL(t *testing.T) {
 		t.Fatal("expected an error for an invalid target URL")
 	}
 }
+
+func TestGenerateDefaultsHTTPSPortAndRootPath(t *testing.T) {
+	// No explicit port (defaults to 443 for https) and no path (defaults to "/").
+	out, err := Generate(Params{TargetURL: "https://example.com", VirtualUsers: 1, DurationSeconds: 1})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	mustContain := []string{
+		`<stringProp name="HTTPSampler.port">443</stringProp>`,
+		`<stringProp name="HTTPSampler.path">/</stringProp>`,
+	}
+	for _, want := range mustContain {
+		if !contains(out, want) {
+			t.Fatalf("expected generated jmx to contain %q\n---\n%s", want, out)
+		}
+	}
+}

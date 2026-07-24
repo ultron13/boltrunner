@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import RunPage from '@/app/runs/[id]/page';
 import { useRunPolling } from '@/hooks/useRunPolling';
+import { cancelRun } from '@/lib/api-client';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'r1' }),
@@ -43,5 +44,15 @@ describe('RunPage', () => {
     render(<RunPage />);
     fireEvent.click(screen.getByRole('tab', { name: 'Metrics' }));
     expect(screen.getByText(/waiting for the first metric snapshot/i)).toBeInTheDocument();
+  });
+
+  it('cancels the run when the cancel button is clicked', () => {
+    vi.mocked(useRunPolling).mockReturnValue({
+      data: { run: { id: 'r1', test_id: 't1', status: 'running' }, history: [] },
+      error: null,
+    });
+    render(<RunPage />);
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(cancelRun).toHaveBeenCalledWith('r1');
   });
 });

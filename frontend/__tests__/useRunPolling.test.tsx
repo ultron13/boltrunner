@@ -25,4 +25,21 @@ describe('useRunPolling', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(getRun.mock.calls.length).toBe(callsAtCompletion);
   });
+
+  it('surfaces an error message when getRun fails', async () => {
+    vi.spyOn(api, 'getRun').mockRejectedValue(new Error('run not found'));
+
+    const { result } = renderHook(() => useRunPolling('missing', 5));
+
+    await waitFor(() => expect(result.current.error).toBe('run not found'));
+    expect(result.current.data).toBeNull();
+  });
+
+  it('shows a generic error message when getRun throws a non-Error value', async () => {
+    vi.spyOn(api, 'getRun').mockRejectedValue('some string rejection');
+
+    const { result } = renderHook(() => useRunPolling('missing', 5));
+
+    await waitFor(() => expect(result.current.error).toBe('failed to fetch run'));
+  });
 });

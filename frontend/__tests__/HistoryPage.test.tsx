@@ -1,15 +1,21 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import HistoryPage from '@/app/history/page';
 import * as api from '@/lib/api-client';
+import { useSearchParams } from 'next/navigation';
 
 const push = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: vi.fn(() => new URLSearchParams()),
 }));
 
 describe('HistoryPage', () => {
+  afterEach(() => {
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
+    vi.restoreAllMocks();
+  });
+
   it('merges runs across all tests and sorts newest first', async () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([
       { id: 't1', name: 'Checkout', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
@@ -44,5 +50,38 @@ describe('HistoryPage', () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
     render(<HistoryPage />);
     expect(await screen.findByText('No runs yet.')).toBeInTheDocument();
+  });
+
+  it('filters to a single test when a testId query param is present', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('testId=t1'));
+    vi.spyOn(api, 'listTests').mockResolvedValue([
+      { id: 't1', name: 'Checkout', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
+      { id: 't2', name: 'Login', target_url: 'http://y', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
+    ]);
+    vi.spyOn(api, 'listRunsForTest').mockImplementation(async (testId: string) =>
+      testId === 't1' ? [{ id: 'r1', test_id: 't1', status: 'completed', created_at: '2026-07-24T00:00:01Z' }] : []
+    );
+
+    render(<HistoryPage />);
+
+    const rows = await screen.findAllByRole('row');
+    expect(rows).toHaveLength(2); // header + r1 only
+    expect(api.listRunsForTest).toHaveBeenCalledTimes(1);
+    expect(api.listRunsForTest).toHaveBeenCalledWith('t1');
+  });
+
+  it('sorts runs without a created_at to a stable relative order', async () => {
+    vi.spyOn(api, 'listTests').mockResolvedValue([
+      { id: 't1', name: 'Checkout', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
+    ]);
+    vi.spyOn(api, 'listRunsForTest').mockResolvedValue([
+      { id: 'r1', test_id: 't1', status: 'pending' },
+      { id: 'r2', test_id: 't1', status: 'pending' },
+    ]);
+
+    render(<HistoryPage />);
+
+    const rows = await screen.findAllByRole('row');
+    expect(rows).toHaveLength(3); // header + r1 + r2, no crash from the missing created_at
   });
 });

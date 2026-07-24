@@ -28,4 +28,14 @@ describe('LiveMetrics', () => {
     render(<LiveMetrics run={{ id: 'r1', test_id: 't1', status: 'completed' }} onCancel={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
   });
+
+  it('shows the error message when the run failed', () => {
+    render(
+      <LiveMetrics
+        run={{ id: 'r1', test_id: 't1', status: 'failed', error_message: 'target unreachable' }}
+        onCancel={vi.fn()}
+      />
+    );
+    expect(screen.getByText('target unreachable')).toBeInTheDocument();
+  });
 });

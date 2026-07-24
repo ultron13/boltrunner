@@ -58,3 +58,25 @@ func TestPostSnapshotSendsExpectedJSON(t *testing.T) {
 		t.Fatalf("unexpected payload: %+v", received)
 	}
 }
+
+func TestPostSnapshotPostErrorIsReturned(t *testing.T) {
+	agg := jtl.AggregateResult{ThroughputRPS: 5, AvgResponseTimeMs: 120, ErrorRatePct: 1.5, SampleCount: 5}
+	// Port 0 on loopback is guaranteed to refuse the connection, forcing
+	// http.Post to fail without needing a real unreachable host.
+	err := postSnapshot("http://127.0.0.1:0", "run-1", agg, 3)
+	if err == nil {
+		t.Fatal("expected an error when the backend is unreachable")
+	}
+}
+
+func TestReadNewLinesSeekErrorIsReturned(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "results-*.jtl")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	f.Close() // Seeking on a closed file returns an error.
+
+	if _, _, err := readNewLines(f, 0); err == nil {
+		t.Fatal("expected an error when seeking on a closed file")
+	}
+}
