@@ -95,3 +95,27 @@ func TestListTestsNeverReturnsNilSlice(t *testing.T) {
 		t.Fatalf("expected 0 snapshots, got %d", len(snapshots))
 	}
 }
+
+func TestCreateRunSetsCreatedAt(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = db.CreateTest(ctx, tst)
+
+	run := &model.Run{TestID: tst.ID, Status: model.RunPending}
+	if err := db.CreateRun(ctx, run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if run.CreatedAt.IsZero() {
+		t.Fatal("expected CreatedAt to be set")
+	}
+
+	got, err := db.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.CreatedAt.IsZero() {
+		t.Fatal("expected GetRun to populate CreatedAt")
+	}
+}

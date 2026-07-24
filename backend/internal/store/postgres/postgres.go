@@ -14,6 +14,9 @@ import (
 //go:embed migrations/0001_init.sql
 var migration0001 string
 
+//go:embed migrations/0002_add_run_created_at.sql
+var migration0002 string
+
 type DB struct {
 	Pool *pgxpool.Pool
 }
@@ -34,7 +37,10 @@ func (db *DB) Close() {
 }
 
 func (db *DB) Migrate(ctx context.Context) error {
-	_, err := db.Pool.Exec(ctx, migration0001)
+	if _, err := db.Pool.Exec(ctx, migration0001); err != nil {
+		return err
+	}
+	_, err := db.Pool.Exec(ctx, migration0002)
 	return err
 }
 
@@ -76,16 +82,16 @@ func (db *DB) GetTest(ctx context.Context, id string) (*model.Test, error) {
 
 func (db *DB) CreateRun(ctx context.Context, r *model.Run) error {
 	return db.Pool.QueryRow(ctx,
-		`INSERT INTO runs (test_id, status) VALUES ($1, $2) RETURNING id`,
+		`INSERT INTO runs (test_id, status) VALUES ($1, $2) RETURNING id, created_at`,
 		r.TestID, r.Status,
-	).Scan(&r.ID)
+	).Scan(&r.ID, &r.CreatedAt)
 }
 
 func (db *DB) GetRun(ctx context.Context, id string) (*model.Run, error) {
 	var r model.Run
 	err := db.Pool.QueryRow(ctx,
-		`SELECT id, test_id, status, started_at, completed_at, error_message FROM runs WHERE id = $1`, id,
-	).Scan(&r.ID, &r.TestID, &r.Status, &r.StartedAt, &r.CompletedAt, &r.ErrorMessage)
+		`SELECT id, test_id, status, created_at, started_at, completed_at, error_message FROM runs WHERE id = $1`, id,
+	).Scan(&r.ID, &r.TestID, &r.Status, &r.CreatedAt, &r.StartedAt, &r.CompletedAt, &r.ErrorMessage)
 	if err == pgx.ErrNoRows {
 		return nil, store.ErrNotFound
 	}

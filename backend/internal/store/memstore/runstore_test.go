@@ -3,6 +3,7 @@ package memstore
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/boltrunner/backend/internal/model"
 )
@@ -38,5 +39,17 @@ func TestRunStoreLifecycle(t *testing.T) {
 	all, err := rs.ListSnapshots(ctx, r.ID)
 	if err != nil || len(all) != 1 {
 		t.Fatalf("ListSnapshots: %d, err=%v", len(all), err)
+	}
+}
+
+func TestCreateRunSetsCreatedAt(t *testing.T) {
+	s := NewRunStore()
+	before := time.Now().UTC()
+	run := &model.Run{TestID: "t1", Status: model.RunPending}
+	if err := s.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if run.CreatedAt.Before(before) || run.CreatedAt.After(time.Now().UTC()) {
+		t.Fatalf("expected CreatedAt to be set to roughly now, got %v", run.CreatedAt)
 	}
 }

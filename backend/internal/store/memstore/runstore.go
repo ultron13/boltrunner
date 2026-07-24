@@ -25,6 +25,7 @@ func (s *RunStore) CreateRun(ctx context.Context, r *model.Run) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.ID = uuid.NewString()
+	r.CreatedAt = time.Now().UTC()
 	s.runs[r.ID] = *r
 	return nil
 }
