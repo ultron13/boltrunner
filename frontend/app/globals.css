@@ -3,20 +3,46 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --chrome-bg: #0f2440;
+  --chrome-fg: #e8edf5;
+  --accent: #3b82f6;
+  --surface: #ffffff;
+  --surface-alt: #f4f6f9;
+  --border: #d3d9e2;
+  --text: #1f2937;
+  --text-muted: #6b7280;
+  --status-pass-bg: #e7f6ea;
+  --status-pass-fg: #1e7d32;
+  --status-warn-bg: #fdf3d8;
+  --status-warn-fg: #946200;
+  --status-fail-bg: #fdecea;
+  --status-fail-fg: #c0392b;
+  --status-info-bg: #e0ecfb;
+  --status-info-fg: #1d4ed8;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --chrome-bg: #1a1f2b;
+  --chrome-fg: #cbd5e1;
+  --accent: #2dd4bf;
+  --surface: #12161f;
+  --surface-alt: #161b25;
+  --border: #262d3a;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --status-pass-bg: #17331f;
+  --status-pass-fg: #4ade80;
+  --status-warn-bg: #3a2f12;
+  --status-warn-fg: #fbbf24;
+  --status-fail-bg: #3b1f1f;
+  --status-fail-fg: #f87171;
+  --status-info-bg: #1e293b;
+  --status-info-fg: #38bdf8;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
+  color: var(--text);
+  background: var(--surface-alt);
   font-family: Arial, Helvetica, sans-serif;
 }
 
