@@ -2,6 +2,7 @@ package memstore
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -38,6 +39,19 @@ func (s *RunStore) GetRun(ctx context.Context, id string) (*model.Run, error) {
 		return nil, store.ErrNotFound
 	}
 	return &r, nil
+}
+
+func (s *RunStore) ListByTest(ctx context.Context, testID string) ([]model.Run, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []model.Run{}
+	for _, r := range s.runs {
+		if r.TestID == testID {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
 }
 
 func (s *RunStore) UpdateRunStatus(ctx context.Context, id string, status model.RunStatus, errMsg string) error {

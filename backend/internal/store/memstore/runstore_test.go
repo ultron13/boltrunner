@@ -53,3 +53,41 @@ func TestCreateRunSetsCreatedAt(t *testing.T) {
 		t.Fatalf("expected CreatedAt to be set to roughly now, got %v", run.CreatedAt)
 	}
 }
+
+func TestListByTestReturnsOnlyMatchingRunsNewestFirst(t *testing.T) {
+	s := NewRunStore()
+	ctx := context.Background()
+
+	older := &model.Run{TestID: "t1", Status: model.RunCompleted}
+	_ = s.CreateRun(ctx, older)
+	time.Sleep(2 * time.Millisecond)
+	newer := &model.Run{TestID: "t1", Status: model.RunRunning}
+	_ = s.CreateRun(ctx, newer)
+	other := &model.Run{TestID: "t2", Status: model.RunPending}
+	_ = s.CreateRun(ctx, other)
+
+	runs, err := s.ListByTest(ctx, "t1")
+	if err != nil {
+		t.Fatalf("ListByTest: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 runs for t1, got %d", len(runs))
+	}
+	if runs[0].ID != newer.ID || runs[1].ID != older.ID {
+		t.Fatalf("expected newest-first order, got %s then %s", runs[0].ID, runs[1].ID)
+	}
+}
+
+func TestListByTestReturnsEmptySliceNotNil(t *testing.T) {
+	s := NewRunStore()
+	runs, err := s.ListByTest(context.Background(), "no-such-test")
+	if err != nil {
+		t.Fatalf("ListByTest: %v", err)
+	}
+	if runs == nil {
+		t.Fatal("expected an empty slice, got nil")
+	}
+	if len(runs) != 0 {
+		t.Fatalf("expected 0 runs, got %d", len(runs))
+	}
+}

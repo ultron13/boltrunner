@@ -98,6 +98,11 @@ func (db *DB) GetRun(ctx context.Context, id string) (*model.Run, error) {
 	return &r, err
 }
 
+func (db *DB) ListByTest(ctx context.Context, testID string) ([]model.Run, error) {
+	// TODO: Implement in Task 3
+	return []model.Run{}, nil
+}
+
 func (db *DB) UpdateRunStatus(ctx context.Context, id string, status model.RunStatus, errMsg string) error {
 	var startedAtExpr, completedAtExpr string
 	switch status {
