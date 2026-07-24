@@ -70,6 +70,24 @@ describe('HistoryPage', () => {
     expect(api.listRunsForTest).toHaveBeenCalledWith('t1');
   });
 
+  it('still renders the successful test runs when another test fetch fails', async () => {
+    vi.spyOn(api, 'listTests').mockResolvedValue([
+      { id: 't1', name: 'Checkout', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
+      { id: 't2', name: 'Login', target_url: 'http://y', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
+    ]);
+    vi.spyOn(api, 'listRunsForTest').mockImplementation(async (testId: string) => {
+      if (testId === 't1') {
+        return [{ id: 'r1', test_id: 't1', status: 'completed', created_at: '2026-07-24T00:00:01Z' }];
+      }
+      throw new Error('boom');
+    });
+
+    render(<HistoryPage />);
+
+    const row = await screen.findByRole('row', { name: /r1/i });
+    expect(row).toBeInTheDocument();
+  });
+
   it('sorts runs without a created_at to a stable relative order', async () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([
       { id: 't1', name: 'Checkout', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
