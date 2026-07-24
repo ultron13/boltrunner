@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE tests (
+CREATE TABLE IF NOT EXISTS tests (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name             TEXT NOT NULL,
     target_url       TEXT NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE tests (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE runs (
+CREATE TABLE IF NOT EXISTS runs (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     test_id       UUID NOT NULL REFERENCES tests(id),
     status        TEXT NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE runs (
     error_message TEXT NOT NULL DEFAULT ''
 );
 
-CREATE TABLE run_metric_snapshots (
+CREATE TABLE IF NOT EXISTS run_metric_snapshots (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     run_id                UUID NOT NULL REFERENCES runs(id),
     ts                    TIMESTAMPTZ NOT NULL,
@@ -29,4 +29,4 @@ CREATE TABLE run_metric_snapshots (
     sample_count          INTEGER NOT NULL
 );
 
-CREATE INDEX idx_run_metric_snapshots_run_id ON run_metric_snapshots(run_id, ts);
+CREATE INDEX IF NOT EXISTS idx_run_metric_snapshots_run_id ON run_metric_snapshots(run_id, ts);
