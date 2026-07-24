@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boltrunner-backend
+  namespace: boltrunner
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: boltrunner-backend }
+  template:
+    metadata:
+      labels: { app: boltrunner-backend }
+    spec:
+      serviceAccountName: boltrunner-backend
+      containers:
+        - name: backend
+          image: boltrunner/server:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: DATABASE_URL, value: "postgres://boltrunner:boltrunner@boltrunner-postgres:5432/boltrunner?sslmode=disable" }
+            - { name: BOLTRUNNER_NAMESPACE, value: boltrunner }
+            - { name: JMETER_IMAGE, value: "boltrunner/jmeter:local" }
+            - { name: SIDECAR_IMAGE, value: "boltrunner/sidecar:local" }
+            - { name: BACKEND_URL, value: "http://boltrunner-backend.boltrunner.svc:8080" }
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: boltrunner-backend
+  namespace: boltrunner
+spec:
+  selector: { app: boltrunner-backend }
+  ports:
+    - { port: 8080, targetPort: 8080 }

@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boltrunner-postgres
+  namespace: boltrunner
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: boltrunner-postgres }
+  template:
+    metadata:
+      labels: { app: boltrunner-postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - { name: POSTGRES_USER, value: boltrunner }
+            - { name: POSTGRES_PASSWORD, value: boltrunner }
+            - { name: POSTGRES_DB, value: boltrunner }
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: boltrunner-postgres
+  namespace: boltrunner
+spec:
+  selector: { app: boltrunner-postgres }
+  ports:
+    - { port: 5432, targetPort: 5432 }
