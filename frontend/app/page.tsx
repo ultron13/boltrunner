@@ -16,11 +16,14 @@ export default function DashboardPage() {
     listTests()
       .then((fetched) => {
         setTests(fetched);
-        return Promise.all(fetched.map((t) => listRunsForTest(t.id)));
-      })
-      .then((runLists) => {
-        const running = runLists.flat().filter((r) => r.status === 'running').length;
-        setActiveRuns(running);
+        Promise.all(fetched.map((t) => listRunsForTest(t.id)))
+          .then((runLists) => {
+            const running = runLists.flat().filter((r) => r.status === 'running').length;
+            setActiveRuns(running);
+          })
+          .catch(() => {
+            setActiveRuns(0);
+          });
       })
       .catch(() => {
         setTests([]);

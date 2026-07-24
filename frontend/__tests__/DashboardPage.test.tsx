@@ -35,4 +35,20 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: /create test/i })).toBeInTheDocument();
     expect(await screen.findByText('No tests yet — create one above.')).toBeInTheDocument();
   });
+
+  it('shows tests even if runs fetch fails, only resets active runs to 0', async () => {
+    vi.spyOn(api, 'listTests').mockResolvedValue([
+      { id: '1', name: 'Critical Test', target_url: 'http://x', virtual_users: 10, duration_seconds: 60, created_at: '2026-07-24T00:00:00Z' },
+    ]);
+    vi.spyOn(api, 'listRunsForTest').mockRejectedValue(new Error('Network error fetching runs'));
+
+    render(<DashboardPage />);
+
+    // Test should still appear in the list despite runs fetch failure
+    await expect(screen.findByText('Critical Test')).resolves.toBeInTheDocument();
+
+    // Active Runs should be 0 due to the failure
+    const activeTile = await screen.findByText('Active Runs');
+    expect(activeTile.closest('div')?.textContent).toContain('0');
+  });
 });
