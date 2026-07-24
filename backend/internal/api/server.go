@@ -31,6 +31,7 @@ func NewServer(testStore store.TestStore, runStore store.RunStore, k8sClient kub
 	s.router.Post("/api/tests", s.handleCreateTest)
 	s.router.Get("/api/tests", s.handleListTests)
 	s.router.Post("/api/tests/{testID}/runs", s.handleStartRun)
+	s.router.Get("/api/tests/{testID}/runs", s.handleListRunsForTest)
 	s.router.Post("/api/runs/{runID}/metrics", s.handlePostMetrics)
 	s.router.Get("/api/runs/{runID}", s.handleGetRun)
 	s.router.Post("/api/runs/{runID}/cancel", s.handleCancelRun)

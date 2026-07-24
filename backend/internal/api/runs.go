@@ -134,3 +134,21 @@ func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (s *Server) handleListRunsForTest(w http.ResponseWriter, r *http.Request) {
+	testID := chi.URLParam(r, "testID")
+	if _, err := s.testStore.GetTest(r.Context(), testID); errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "test not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, "failed to load test", http.StatusInternalServerError)
+		return
+	}
+	runs, err := s.runStore.ListByTest(r.Context(), testID)
+	if err != nil {
+		http.Error(w, "failed to load runs", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(runs)
+}

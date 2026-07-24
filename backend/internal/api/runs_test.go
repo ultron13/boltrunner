@@ -166,3 +166,55 @@ func TestCancelRunUnknown(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
+
+func TestListRunsForTest(t *testing.T) {
+	s := newTestServer()
+	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = s.testStore.CreateTest(nil, test)
+	run1 := &model.Run{TestID: test.ID, Status: model.RunCompleted}
+	_ = s.runStore.CreateRun(nil, run1)
+	run2 := &model.Run{TestID: test.ID, Status: model.RunRunning}
+	_ = s.runStore.CreateRun(nil, run2)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tests/"+test.ID+"/runs", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var runs []model.Run
+	if err := json.Unmarshal(rec.Body.Bytes(), &runs); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 runs, got %d", len(runs))
+	}
+}
+
+func TestListRunsForTestEmptyIsNotNull(t *testing.T) {
+	s := newTestServer()
+	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = s.testStore.CreateTest(nil, test)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tests/"+test.ID+"/runs", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.String() != "[]\n" {
+		t.Fatalf("expected an empty JSON array, got %q", rec.Body.String())
+	}
+}
+
+func TestListRunsForUnknownTest(t *testing.T) {
+	s := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/api/tests/missing/runs", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
