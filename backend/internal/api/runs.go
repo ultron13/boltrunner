@@ -54,3 +54,61 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(run)
 }
+
+type postMetricsRequest struct {
+	ElapsedSeconds    int     `json:"elapsed_seconds"`
+	ThroughputRPS     float64 `json:"throughput_rps"`
+	AvgResponseTimeMs float64 `json:"avg_response_time_ms"`
+	ErrorRatePct      float64 `json:"error_rate_pct"`
+	SampleCount       int     `json:"sample_count"`
+}
+
+func (s *Server) handlePostMetrics(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "runID")
+	var req postMetricsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	snap := &model.RunMetricSnapshot{
+		RunID: runID, ElapsedSeconds: req.ElapsedSeconds, ThroughputRPS: req.ThroughputRPS,
+		AvgResponseTimeMs: req.AvgResponseTimeMs, ErrorRatePct: req.ErrorRatePct, SampleCount: req.SampleCount,
+	}
+	if err := s.runStore.AppendMetricSnapshot(r.Context(), snap); errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, "failed to store snapshot", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+type getRunResponse struct {
+	Run     model.Run                 `json:"run"`
+	Latest  *model.RunMetricSnapshot  `json:"latest,omitempty"`
+	History []model.RunMetricSnapshot `json:"history"`
+}
+
+func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "runID")
+	run, err := s.runStore.GetRun(r.Context(), runID)
+	if errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, "failed to load run", http.StatusInternalServerError)
+		return
+	}
+	history, err := s.runStore.ListSnapshots(r.Context(), runID)
+	if err != nil {
+		http.Error(w, "failed to load history", http.StatusInternalServerError)
+		return
+	}
+	resp := getRunResponse{Run: *run, History: history}
+	if latest, err := s.runStore.LatestSnapshot(r.Context(), runID); err == nil {
+		resp.Latest = latest
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}

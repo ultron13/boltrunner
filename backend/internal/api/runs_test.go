@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +60,67 @@ func TestStartRunCreatesJob(t *testing.T) {
 func TestStartRunUnknownTest(t *testing.T) {
 	s := newTestServer()
 	req := httptest.NewRequest(http.MethodPost, "/api/tests/missing/runs", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestPostMetricsAndGetRun(t *testing.T) {
+	s := newTestServer()
+	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = s.testStore.CreateTest(nil, test)
+	run := &model.Run{TestID: test.ID, Status: model.RunRunning}
+	_ = s.runStore.CreateRun(nil, run)
+
+	body, _ := json.Marshal(map[string]any{
+		"elapsed_seconds": 1, "throughput_rps": 12.5, "avg_response_time_ms": 210.0,
+		"error_rate_pct": 0.0, "sample_count": 12,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+run.ID+"/metrics", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/runs/"+run.ID, nil)
+	rec2 := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec2.Code)
+	}
+	var resp struct {
+		Run     model.Run                 `json:"run"`
+		Latest  *model.RunMetricSnapshot  `json:"latest"`
+		History []model.RunMetricSnapshot `json:"history"`
+	}
+	if err := json.Unmarshal(rec2.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Latest == nil || resp.Latest.ThroughputRPS != 12.5 {
+		t.Fatalf("unexpected latest: %+v", resp.Latest)
+	}
+	if len(resp.History) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(resp.History))
+	}
+}
+
+func TestGetRunUnknown(t *testing.T) {
+	s := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/api/runs/missing", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestPostMetricsUnknownRun(t *testing.T) {
+	s := newTestServer()
+	body, _ := json.Marshal(map[string]any{"elapsed_seconds": 1})
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/missing/metrics", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Router().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
