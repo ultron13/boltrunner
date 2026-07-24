@@ -15,6 +15,7 @@ export type Run = {
   id: string;
   test_id: string;
   status: RunStatus;
+  created_at?: string;
   started_at?: string;
   completed_at?: string;
   error_message?: string;
@@ -73,6 +74,11 @@ export async function startRun(testId: string): Promise<Run> {
 
 export async function getRun(runId: string): Promise<GetRunResponse> {
   return unwrap(await fetch(`${API_URL}/api/runs/${runId}`, { cache: 'no-store' }));
+}
+
+export async function listRunsForTest(testId: string): Promise<Run[]> {
+  const runs = await unwrap<Run[]>(await fetch(`${API_URL}/api/tests/${testId}/runs`, { cache: 'no-store' }));
+  return runs ?? [];
 }
 
 export async function cancelRun(runId: string): Promise<void> {
