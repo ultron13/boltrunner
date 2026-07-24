@@ -1,35 +1,22 @@
 'use client';
 
 import { Test } from '@/lib/api-client';
+import { DataTable, Column } from '@/components/ui/DataTable';
 
 export function TestList({ tests, onStart }: { tests: Test[]; onStart: (testId: string) => void }) {
-  if (tests.length === 0) {
-    return <p>No tests yet — create one above.</p>;
-  }
+  const columns: Column<Test>[] = [
+    { key: 'name', header: 'Name' },
+    { key: 'target_url', header: 'Target URL' },
+    { key: 'virtual_users', header: 'Virtual users', align: 'numeric' },
+    { key: 'duration_seconds', header: 'Duration (s)', align: 'numeric' },
+    {
+      key: 'actions',
+      header: '',
+      render: (t) => <button onClick={() => onStart(t.id)}>Run</button>,
+    },
+  ];
+
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Target URL</th>
-          <th>Virtual users</th>
-          <th>Duration (s)</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {tests.map((t) => (
-          <tr key={t.id}>
-            <td>{t.name}</td>
-            <td>{t.target_url}</td>
-            <td>{t.virtual_users}</td>
-            <td>{t.duration_seconds}</td>
-            <td>
-              <button onClick={() => onStart(t.id)}>Run</button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <DataTable columns={columns} rows={tests} rowKey={(t) => t.id} emptyMessage="No tests yet — create one above." />
   );
 }
