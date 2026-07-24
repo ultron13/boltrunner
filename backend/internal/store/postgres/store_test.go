@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/boltrunner/backend/internal/model"
 )
@@ -117,5 +118,39 @@ func TestCreateRunSetsCreatedAt(t *testing.T) {
 	}
 	if got.CreatedAt.IsZero() {
 		t.Fatal("expected GetRun to populate CreatedAt")
+	}
+}
+
+func TestListByTestNewestFirstAndNeverNil(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "list-by-test-check", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
+	_ = db.CreateTest(ctx, tst)
+
+	// A brand-new test has no runs yet: must be an empty slice, not nil.
+	none, err := db.ListByTest(ctx, tst.ID)
+	if err != nil {
+		t.Fatalf("ListByTest (empty): %v", err)
+	}
+	if none == nil {
+		t.Fatal("expected an empty slice, got nil")
+	}
+
+	older := &model.Run{TestID: tst.ID, Status: model.RunCompleted}
+	_ = db.CreateRun(ctx, older)
+	time.Sleep(10 * time.Millisecond)
+	newer := &model.Run{TestID: tst.ID, Status: model.RunRunning}
+	_ = db.CreateRun(ctx, newer)
+
+	runs, err := db.ListByTest(ctx, tst.ID)
+	if err != nil {
+		t.Fatalf("ListByTest: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 runs, got %d", len(runs))
+	}
+	if runs[0].ID != newer.ID || runs[1].ID != older.ID {
+		t.Fatalf("expected newest-first order, got %s then %s", runs[0].ID, runs[1].ID)
 	}
 }

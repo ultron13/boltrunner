@@ -99,8 +99,22 @@ func (db *DB) GetRun(ctx context.Context, id string) (*model.Run, error) {
 }
 
 func (db *DB) ListByTest(ctx context.Context, testID string) ([]model.Run, error) {
-	// TODO: Implement in Task 3
-	return []model.Run{}, nil
+	rows, err := db.Pool.Query(ctx,
+		`SELECT id, test_id, status, created_at, started_at, completed_at, error_message
+		 FROM runs WHERE test_id = $1 ORDER BY created_at DESC`, testID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Run{}
+	for rows.Next() {
+		var r model.Run
+		if err := rows.Scan(&r.ID, &r.TestID, &r.Status, &r.CreatedAt, &r.StartedAt, &r.CompletedAt, &r.ErrorMessage); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func (db *DB) UpdateRunStatus(ctx context.Context, id string, status model.RunStatus, errMsg string) error {
