@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/boltrunner/backend/internal/jmx"
@@ -111,4 +112,25 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "runID")
+	if _, err := s.runStore.GetRun(r.Context(), runID); errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	background := metav1.DeletePropagationBackground
+	err := s.k8sClient.BatchV1().Jobs(s.jobCfg.Namespace).Delete(r.Context(), "run-"+runID, metav1.DeleteOptions{PropagationPolicy: &background})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		http.Error(w, "failed to delete job", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.runStore.UpdateRunStatus(r.Context(), runID, model.RunStopped, ""); err != nil {
+		http.Error(w, "failed to update run", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -127,3 +127,42 @@ func TestPostMetricsUnknownRun(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
+
+func TestCancelRunDeletesJob(t *testing.T) {
+	s := newTestServer()
+	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = s.testStore.CreateTest(nil, test)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tests/"+test.ID+"/runs", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	var run model.Run
+	json.Unmarshal(rec.Body.Bytes(), &run)
+
+	cancelReq := httptest.NewRequest(http.MethodPost, "/api/runs/"+run.ID+"/cancel", nil)
+	cancelRec := httptest.NewRecorder()
+	s.Router().ServeHTTP(cancelRec, cancelReq)
+	if cancelRec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", cancelRec.Code, cancelRec.Body.String())
+	}
+
+	got, _ := s.runStore.GetRun(cancelReq.Context(), run.ID)
+	if got.Status != model.RunStopped {
+		t.Fatalf("expected stopped, got %s", got.Status)
+	}
+
+	jobs, _ := s.k8sClient.BatchV1().Jobs("boltrunner").List(cancelReq.Context(), metaListOpts())
+	if len(jobs.Items) != 0 {
+		t.Fatalf("expected job to be deleted, still have %d", len(jobs.Items))
+	}
+}
+
+func TestCancelRunUnknown(t *testing.T) {
+	s := newTestServer()
+	req := httptest.NewRequest(http.MethodPost, "/api/runs/missing/cancel", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
