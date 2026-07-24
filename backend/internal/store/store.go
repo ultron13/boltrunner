@@ -14,3 +14,12 @@ type TestStore interface {
 	ListTests(ctx context.Context) ([]model.Test, error)
 	GetTest(ctx context.Context, id string) (*model.Test, error)
 }
+
+type RunStore interface {
+	CreateRun(ctx context.Context, r *model.Run) error
+	GetRun(ctx context.Context, id string) (*model.Run, error)
+	UpdateRunStatus(ctx context.Context, id string, status model.RunStatus, errMsg string) error
+	AppendMetricSnapshot(ctx context.Context, s *model.RunMetricSnapshot) error
+	LatestSnapshot(ctx context.Context, runID string) (*model.RunMetricSnapshot, error)
+	ListSnapshots(ctx context.Context, runID string) ([]model.RunMetricSnapshot, error)
+}

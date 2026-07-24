@@ -4,12 +4,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/boltrunner/backend/internal/store/memstore"
 )
 
 func TestHealthz(t *testing.T) {
-	s := NewServer(memstore.NewTestStore())
+	s := newTestServer()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 

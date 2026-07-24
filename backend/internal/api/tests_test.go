@@ -8,11 +8,10 @@ import (
 	"testing"
 
 	"github.com/boltrunner/backend/internal/model"
-	"github.com/boltrunner/backend/internal/store/memstore"
 )
 
 func TestCreateAndListTests(t *testing.T) {
-	s := NewServer(memstore.NewTestStore())
+	s := newTestServer()
 
 	body, _ := json.Marshal(map[string]any{
 		"name": "smoke", "target_url": "http://example.com",
