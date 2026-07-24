@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('portal shell renders top nav, tree nav, and breadcrumb on the dashboard', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByText('BoltRunner')).toBeVisible();
+  await expect(page.getByRole('banner').getByText('BoltRunner')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Test Runs' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible();
