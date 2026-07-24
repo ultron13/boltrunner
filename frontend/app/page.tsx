@@ -42,7 +42,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold text-text">BoltRunner</h1>
+      <h1 className="text-2xl font-semibold text-text">Dashboard</h1>
       <div className="grid grid-cols-2 gap-4 max-w-md">
         <KpiTile label="Total Tests" value={tests.length} />
         <KpiTile label="Active Runs" value={activeRuns} />
