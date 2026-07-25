@@ -19,10 +19,14 @@ export function WorkspaceSwitcher() {
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [open]);
 
+  function close() {
+    setOpen(false);
+    triggerRef.current?.focus();
+  }
+
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Escape') {
-      setOpen(false);
-      triggerRef.current?.focus();
+      close();
     }
   }
 
@@ -48,7 +52,7 @@ export function WorkspaceSwitcher() {
             type="button"
             role="menuitemradio"
             aria-checked="true"
-            onClick={() => setOpen(false)}
+            onClick={close}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-alt"
           >
             <span aria-hidden="true">✓</span> Default

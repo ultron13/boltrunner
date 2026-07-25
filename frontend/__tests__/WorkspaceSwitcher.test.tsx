@@ -33,6 +33,14 @@ describe('WorkspaceSwitcher', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('returns focus to the trigger when Default is selected', () => {
+    render(<WorkspaceSwitcher />);
+    const trigger = screen.getByRole('button', { name: /default/i });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /default/i }));
+    expect(trigger).toHaveFocus();
+  });
+
   it('closes when clicking outside', () => {
     render(
       <div>

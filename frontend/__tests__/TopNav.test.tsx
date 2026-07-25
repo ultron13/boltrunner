@@ -42,4 +42,13 @@ describe('TopNav', () => {
     );
     expect(screen.getByRole('button', { name: /toggle theme/i })).toBeInTheDocument();
   });
+
+  it('renders the workspace switcher', () => {
+    render(
+      <ThemeProvider>
+        <TopNav modules={modules} />
+      </ThemeProvider>
+    );
+    expect(screen.getByRole('button', { name: /default/i })).toHaveAttribute('aria-haspopup', 'menu');
+  });
 });
