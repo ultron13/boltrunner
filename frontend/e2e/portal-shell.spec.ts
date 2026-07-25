@@ -46,3 +46,14 @@ test('admin page renders with the API base URL', async ({ page }) => {
   await expect(page.getByText(/API base URL/i)).toBeVisible();
   await expect(page.getByRole('button', { name: /toggle theme/i })).toBeVisible();
 });
+
+test('workspace switcher shows Default checked and a disabled New project action', async ({ page }) => {
+  await page.goto('/');
+  const trigger = page.getByRole('button', { name: /default/i });
+  await trigger.click();
+  await expect(page.getByRole('menuitemradio', { name: /default/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /new project/i })).toBeDisabled();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toBeHidden();
+});
