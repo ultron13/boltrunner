@@ -8,6 +8,7 @@ test.describe('responsive portal (phone viewport)', () => {
     await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Workspace' })).toBeHidden();
     await expect(page.getByRole('link', { name: 'Test Runs' })).toBeHidden();
+    await expect(page.getByRole('button', { name: /create test/i })).toBeHidden();
   });
 
   test('navigates between all four tabs', async ({ page }) => {

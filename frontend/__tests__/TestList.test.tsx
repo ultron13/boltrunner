@@ -24,4 +24,12 @@ describe('TestList', () => {
     fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: /run/i }));
     expect(onStart).toHaveBeenCalledWith('1');
   });
+
+  it('links the test name to its filtered history page', () => {
+    render(<TestList tests={tests} onStart={() => {}} />);
+    expect(within(screen.getByRole('table')).getByRole('link', { name: 'Checkout Load' })).toHaveAttribute(
+      'href',
+      '/history?testId=1'
+    );
+  });
 });

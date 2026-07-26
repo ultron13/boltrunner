@@ -57,6 +57,13 @@ describe('DashboardPage', () => {
     expect(await screen.findByRole('button', { name: /create test/i })).toBeInTheDocument();
   });
 
+  it('hides the test management panel below md', async () => {
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(<DashboardPage />);
+    const createButton = await screen.findByRole('button', { name: /create test/i });
+    expect(createButton.closest('div.hidden')).toHaveClass('hidden', 'md:block');
+  });
+
   it('increments the Total Tests KPI when a test is created through the panel', async () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
     vi.spyOn(api, 'createTest').mockResolvedValue({

@@ -1,11 +1,20 @@
 'use client';
 
+import Link from 'next/link';
 import { Test } from '@/lib/api-client';
 import { DataTable, Column } from '@/components/ui/DataTable';
 
 export function TestList({ tests, onStart }: { tests: Test[]; onStart: (testId: string) => void }) {
   const columns: Column<Test>[] = [
-    { key: 'name', header: 'Name' },
+    {
+      key: 'name',
+      header: 'Name',
+      render: (t) => (
+        <Link href={`/history?testId=${t.id}`} className="text-accent hover:underline">
+          {t.name}
+        </Link>
+      ),
+    },
     { key: 'target_url', header: 'Target URL' },
     { key: 'virtual_users', header: 'Virtual users', align: 'numeric' },
     { key: 'duration_seconds', header: 'Duration (s)', align: 'numeric' },

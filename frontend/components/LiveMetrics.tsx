@@ -20,7 +20,7 @@ export function LiveMetrics({
         {ACTIVE_STATUSES.has(run.status) && <button onClick={onCancel}>Cancel</button>}
       </div>
       {run.error_message && <p className="text-red-600">{run.error_message}</p>}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
           <div className="text-sm text-text-muted">Throughput (req/s)</div>
           <div className="text-2xl text-text">{latest ? latest.throughput_rps.toFixed(1) : '—'}</div>

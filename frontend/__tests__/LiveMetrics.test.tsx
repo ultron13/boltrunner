@@ -38,4 +38,10 @@ describe('LiveMetrics', () => {
     );
     expect(screen.getByText('target unreachable')).toBeInTheDocument();
   });
+
+  it('uses a 2-column grid below md and 4 columns at md and up', () => {
+    render(<LiveMetrics run={{ id: 'r1', test_id: 't1', status: 'running' }} onCancel={vi.fn()} />);
+    const grid = screen.getByText('Throughput (req/s)').closest('.grid');
+    expect(grid).toHaveClass('grid-cols-2', 'md:grid-cols-4');
+  });
 });
