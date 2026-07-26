@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { listTests, Test } from '@/lib/api-client';
 import { TopNav } from '@/components/ui/TopNav';
 import { TreeNav } from '@/components/ui/TreeNav';
+import { BottomTabBar } from '@/components/ui/BottomTabBar';
 import { Breadcrumb, BreadcrumbItem } from '@/components/ui/Breadcrumb';
 
 const MODULES = [
@@ -18,6 +19,7 @@ function breadcrumbFor(pathname: string, testId: string | null, testName?: strin
   const root: BreadcrumbItem = { label: 'Default', href: '/' };
   if (pathname === '/') return [root];
   if (pathname === '/admin') return [root, { label: 'Admin' }];
+  if (pathname === '/tests') return [root, { label: 'Tests' }];
   if (pathname === '/history') {
     return testId
       ? [root, { label: 'Test Runs', href: '/history' }, { label: testName ?? testId }]
@@ -47,12 +49,15 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="min-h-screen flex flex-col bg-surface-alt text-text">
       <TopNav modules={MODULES} />
       <div className="flex flex-1">
-        <TreeNav tests={tests} activeTestId={testId ?? undefined} />
+        <div className="hidden md:block">
+          <TreeNav tests={tests} activeTestId={testId ?? undefined} />
+        </div>
         <div className="flex-1 flex flex-col">
           <Breadcrumb items={crumbs} />
-          <main className="flex-1 p-6">{children}</main>
+          <main className="flex-1 p-6 pb-20 md:pb-6">{children}</main>
         </div>
       </div>
+      <BottomTabBar />
     </div>
   );
 }

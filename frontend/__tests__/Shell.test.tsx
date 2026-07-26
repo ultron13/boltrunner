@@ -129,4 +129,42 @@ describe('Shell', () => {
     );
     expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Run r1');
   });
+
+  it('renders the bottom tab bar', async () => {
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>page content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    expect(await screen.findByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
+  });
+
+  it('wraps the tree nav so it is hidden below md and shown at md and up', async () => {
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>page content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    const treeNav = await screen.findByRole('navigation', { name: 'Workspace' });
+    expect(treeNav.parentElement).toHaveClass('hidden', 'md:block');
+  });
+
+  it('shows a Tests breadcrumb on the tests path', async () => {
+    vi.mocked(usePathname).mockReturnValue('/tests');
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>tests content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+    expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Tests');
+  });
 });
