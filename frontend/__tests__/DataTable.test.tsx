@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { DataTable, Column } from '@/components/ui/DataTable';
 
 type Row = { id: string; name: string; count: number };
@@ -32,6 +32,23 @@ describe('DataTable', () => {
   it('uses a custom render function when provided', () => {
     const withRender: Column<Row>[] = [{ key: 'name', header: 'Name', render: (r) => <span>Custom {r.name}</span> }];
     render(<DataTable columns={withRender} rows={rows} rowKey={(r) => r.id} />);
-    expect(screen.getByText('Custom Alpha')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('Custom Alpha')).toBeInTheDocument();
+  });
+
+  it('renders the same rows as stacked cards for phone width, titled by the first column', () => {
+    render(<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} />);
+    const list = screen.getByRole('list');
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent('Alpha');
+    expect(items[0]).toHaveTextContent('Count: 3');
+  });
+
+  it('calls onRowClick when a card is clicked', () => {
+    const onRowClick = vi.fn();
+    render(<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} onRowClick={onRowClick} />);
+    const card = within(screen.getByRole('list')).getByRole('listitem');
+    fireEvent.click(card);
+    expect(onRowClick).toHaveBeenCalledWith(rows[0]);
   });
 });

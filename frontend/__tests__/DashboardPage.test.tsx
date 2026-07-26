@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import DashboardPage from '@/app/page';
 import * as api from '@/lib/api-client';
 
@@ -45,7 +45,8 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     // Test should still appear in the list despite runs fetch failure
-    await expect(screen.findByText('Critical Test')).resolves.toBeInTheDocument();
+    const table = await screen.findByRole('table');
+    await expect(within(table).findByText('Critical Test')).resolves.toBeInTheDocument();
 
     // Active Runs should be 0 due to the failure
     const activeTile = await screen.findByText('Active Runs');

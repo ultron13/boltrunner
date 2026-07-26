@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { TestList } from '@/components/TestList';
 
 const tests = [
@@ -15,13 +15,13 @@ describe('TestList', () => {
   it('renders a row per test with a Run button', () => {
     render(<TestList tests={tests} onStart={() => {}} />);
     expect(screen.getByRole('row', { name: /Checkout Load/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /run/i })).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByRole('button', { name: /run/i })).toBeInTheDocument();
   });
 
   it('calls onStart with the test id when Run is clicked', () => {
     const onStart = vi.fn();
     render(<TestList tests={tests} onStart={onStart} />);
-    fireEvent.click(screen.getByRole('button', { name: /run/i }));
+    fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: /run/i }));
     expect(onStart).toHaveBeenCalledWith('1');
   });
 });
