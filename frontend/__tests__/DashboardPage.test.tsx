@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import DashboardPage from '@/app/page';
 import * as api from '@/lib/api-client';
 
@@ -28,15 +28,7 @@ describe('DashboardPage', () => {
     expect(activeTile.closest('div')?.textContent).toContain('1');
   });
 
-  it('still renders the create form and test list', async () => {
-    vi.spyOn(api, 'listTests').mockResolvedValue([]);
-    vi.spyOn(api, 'listRunsForTest').mockResolvedValue([]);
-    render(<DashboardPage />);
-    expect(screen.getByRole('button', { name: /create test/i })).toBeInTheDocument();
-    expect(await screen.findByText('No tests yet — create one above.')).toBeInTheDocument();
-  });
-
-  it('shows tests even if runs fetch fails, only resets active runs to 0', async () => {
+  it('resets Active Runs to 0 when the runs fetch fails', async () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([
       { id: '1', name: 'Critical Test', target_url: 'http://x', virtual_users: 10, duration_seconds: 60, created_at: '2026-07-24T00:00:00Z' },
     ]);
@@ -44,24 +36,24 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />);
 
-    // Test should still appear in the list despite runs fetch failure
-    const table = await screen.findByRole('table');
-    await expect(within(table).findByText('Critical Test')).resolves.toBeInTheDocument();
-
-    // Active Runs should be 0 due to the failure
     const activeTile = await screen.findByText('Active Runs');
     expect(activeTile.closest('div')?.textContent).toContain('0');
   });
 
-  it('shows an empty dashboard when listTests itself fails', async () => {
+  it('shows zeroed KPIs when listTests itself fails', async () => {
     vi.spyOn(api, 'listTests').mockRejectedValue(new Error('boom'));
 
     render(<DashboardPage />);
 
-    expect(await screen.findByText('No tests yet — create one above.')).toBeInTheDocument();
     const totalTile = await screen.findByText('Total Tests');
     expect(totalTile.closest('div')?.textContent).toContain('0');
     const activeTile = await screen.findByText('Active Runs');
     expect(activeTile.closest('div')?.textContent).toContain('0');
+  });
+
+  it('renders the test management panel', async () => {
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    render(<DashboardPage />);
+    expect(await screen.findByRole('button', { name: /create test/i })).toBeInTheDocument();
   });
 });

@@ -1,16 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { listTests, listRunsForTest, startRun, Test } from '@/lib/api-client';
-import { CreateTestForm } from '@/components/CreateTestForm';
-import { TestList } from '@/components/TestList';
+import { listTests, listRunsForTest, Test } from '@/lib/api-client';
+import { TestManagementPanel } from '@/components/TestManagementPanel';
 import { KpiTile } from '@/components/ui/KpiTile';
 
 export default function DashboardPage() {
   const [tests, setTests] = useState<Test[]>([]);
   const [activeRuns, setActiveRuns] = useState(0);
-  const router = useRouter();
 
   useEffect(() => {
     listTests()
@@ -31,15 +28,6 @@ export default function DashboardPage() {
       });
   }, []);
 
-  async function handleStart(testId: string) {
-    const run = await startRun(testId);
-    router.push(`/runs/${run.id}`);
-  }
-
-  function handleCreated(t: Test) {
-    setTests((prev) => [t, ...prev]);
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold text-text">Dashboard</h1>
@@ -47,8 +35,9 @@ export default function DashboardPage() {
         <KpiTile label="Total Tests" value={tests.length} />
         <KpiTile label="Active Runs" value={activeRuns} />
       </div>
-      <CreateTestForm onCreated={handleCreated} />
-      <TestList tests={tests} onStart={handleStart} />
+      <div className="hidden md:block">
+        <TestManagementPanel />
+      </div>
     </div>
   );
 }
