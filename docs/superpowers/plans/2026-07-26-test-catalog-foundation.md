@@ -16,7 +16,8 @@
 - The API's `Test.id` is the **catalog id**. The version row's PK is exposed separately as `version_id`. Because the backfill sets `catalog_id = id`, responses for existing data stay byte-identical.
 - `ListTests` orders by the **family's** `MIN(created_at)` descending — so editing a test does not reshuffle the list.
 - A `(catalog_id, version)` collision from concurrent edits returns `store.ErrConflict`, surfaced by the API as **HTTP 409**. It is never silently retried and never forks a version number.
-- Postgres store tests are skipped unless `BOLTRUNNER_TEST_DSN` is set (existing `setupDB` behavior). Never point that DSN at the shared dev database `boltrunner` — use a dedicated database. Tests must tolerate pre-existing rows, as the current ones do.
+- Postgres store tests are skipped unless `BOLTRUNNER_TEST_DSN` is set (existing `setupDB` behavior). CI's `backend-unit` job sets it against a `postgres:16` service, so these tests **do** run there and **do** count toward the 88% coverage gate — never treat them as optional. Locally, never point that DSN at the shared dev database `boltrunner`; use a dedicated database. Tests must tolerate pre-existing rows, as the current ones do.
+- The test DSN user must be able to `CREATE DATABASE` (the `newScratchDB` helper needs it). This holds for both CI's `postgres:16` service and the dev cluster, where `POSTGRES_USER=boltrunner` is created as a superuser. `replaceDBName` must preserve the DSN's query string, because CI's DSN carries `?sslmode=disable`.
 - **Known limitation, deliberately accepted:** migrations 0003/0004 add `NOT NULL` columns without defaults, so an *old* server binary still running against the *new* schema will fail inserts. This project migrates on boot inside the same binary and has no zero-downtime requirement yet, so no rolling-upgrade compatibility shim is built. Do not migrate the shared dev database while the old image is deployed.
 
 ---
@@ -2032,11 +2033,15 @@ cd frontend && npx vitest run
 
 Expected: PASS, the same count as before this plan began (103 tests / 24 files).
 
-- [ ] **Step 5: Record what could not be verified**
+- [ ] **Step 5: Record what is verified locally vs. in CI**
 
-Do **not** attempt to migrate the shared dev database or redeploy the backend image. `kind` is not installed on this machine (`kind: command not found`), so the in-cluster image cannot be rebuilt or loaded, and migrating the shared database while the old image is deployed would break it — the new `NOT NULL` columns have no defaults, so the old binary's inserts would fail (see Global Constraints).
+Do **not** attempt to migrate the shared dev database or redeploy the in-cluster backend image. `kind` is not installed on this machine (`kind: command not found`), so the image cannot be rebuilt or loaded locally, and migrating the shared database while the old image is deployed would break it — the new `NOT NULL` columns have no defaults, so the old binary's inserts would fail (see Global Constraints).
 
-Write a short note in the task report stating plainly: browser e2e was **not** re-run against the new backend, why, and that the frontend is provably unchanged so its existing e2e behavior is unaffected. Do not claim end-to-end verification that did not happen.
+This is a gap in *local* verification only. `.github/workflows/ci.yml` covers the rest:
+* `backend-unit` runs a `postgres:16` service and sets `BOLTRUNNER_TEST_DSN`, so the migrations, the window-function queries, the conflict path, and the `newScratchDB` upgrade tests all execute in CI — and count toward the 88% gate there.
+* `integration-kind` builds all three images, loads them with `kind`, deploys, and runs the browser e2e against the **new** backend. That is where end-to-end verification happens.
+
+Write a short note in the task report stating plainly which checks ran locally, that browser e2e against the new backend is delegated to CI's `integration-kind` job rather than run here, and that the frontend is provably unchanged. Do not claim end-to-end verification that did not happen locally — and equally, do not claim it is impossible, because CI performs it.
 
 - [ ] **Step 6: Clean up**
 
