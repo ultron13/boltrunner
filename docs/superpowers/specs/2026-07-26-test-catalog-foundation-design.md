@@ -193,6 +193,12 @@ first created, not when it was last edited. `UpdateTest` inserts `version = (SEL
 for the family; the unique index on `(catalog_id, version)` is what makes a concurrent
 double-edit fail loudly instead of silently forking a version number.
 
+That failure is part of the contract, not an incidental database error, so it gets a sentinel:
+`store.ErrConflict` alongside the existing `store.ErrNotFound`. Postgres `UpdateTest` maps a
+unique-violation (`SQLSTATE 23505`) on `idx_tests_catalog_version` to it; `memstore` returns it
+when the version it computed is already occupied. Callers therefore distinguish "someone else
+edited this test first" from a genuine failure without inspecting driver-specific errors.
+
 `memstore` mirrors the same semantics over its map: group by `catalog_id`, take max version,
 derive `CreatedAt` as the family minimum.
 
@@ -200,6 +206,11 @@ derive `CreatedAt` as the family minimum.
 
 New routes:
 * `PUT /api/tests/{testID}` → creates version N+1, responds `200` with the new latest.
+  Returns `404` if the catalog id is unknown, `400` on the same validation rules
+  `POST /api/tests` already enforces, and **`409 Conflict`** when `store.ErrConflict` comes
+  back — i.e. a concurrent edit already claimed that version number. `409` is the honest code
+  here: the request was valid and the client may retry against the new latest version. The
+  eventual edit UI (a later ticket) must handle it rather than assuming success.
 * `GET /api/tests/{testID}/versions` → all versions of a test, newest first.
 * `GET /api/projects` → list projects.
 
@@ -223,6 +234,10 @@ Unchanged: `GET /api/tests`, `GET /api/tests/{testID}/runs`, and every `/api/run
   `project_id`, `catalog_id`, and `test_catalog_id` correctly and exactly once.
 * **Version pinning**: a run started before an edit still resolves to the config it actually
   executed after the edit — the correctness property the whole storage model exists to provide.
+* **Conflict on concurrent edit**: both stores return `store.ErrConflict` when a version number
+  is already claimed, and the `PUT` handler maps it to `409`. Postgres proves this against the
+  real unique index rather than a simulated error; `memstore` proves the same contract holds for
+  the in-memory implementation, so the two stay substitutable.
 * **Handlers**: `PUT`, `/versions`, and `/projects` including 404 and validation paths.
 * **Acceptance criterion**: every existing `memstore`, `postgres`, and handler test passes
   **unchanged**, and the frontend's existing unit and e2e suites pass untouched. The repo's 88%
