@@ -51,4 +51,14 @@ describe('TopNav', () => {
     );
     expect(screen.getByRole('button', { name: /default/i })).toHaveAttribute('aria-haspopup', 'menu');
   });
+
+  it('wraps the module links so they are hidden below md and shown at md and up', () => {
+    render(
+      <ThemeProvider>
+        <TopNav modules={modules} />
+      </ThemeProvider>
+    );
+    const dashboardLink = screen.getByRole('link', { name: 'Dashboard' });
+    expect(dashboardLink.closest('nav')).toHaveClass('hidden', 'md:flex');
+  });
 });

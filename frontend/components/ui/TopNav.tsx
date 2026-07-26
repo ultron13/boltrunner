@@ -14,14 +14,16 @@ export function TopNav({ modules }: { modules: NavModule[] }) {
       <div className="flex items-center gap-4">
         <span className="font-semibold">BoltRunner</span>
         <WorkspaceSwitcher />
-        {modules.map((m) => {
-          const active = pathname === m.href;
-          return (
-            <Link key={m.label} href={m.href} className={`pb-1 ${active ? 'border-b-2 border-accent' : ''}`}>
-              {m.label}
-            </Link>
-          );
-        })}
+        <nav className="hidden md:flex items-center gap-4">
+          {modules.map((m) => {
+            const active = pathname === m.href;
+            return (
+              <Link key={m.label} href={m.href} className={`pb-1 ${active ? 'border-b-2 border-accent' : ''}`}>
+                {m.label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
       <ThemeToggle />
     </header>
