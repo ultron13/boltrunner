@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DashboardPage from '@/app/page';
 import * as api from '@/lib/api-client';
 
@@ -55,5 +55,33 @@ describe('DashboardPage', () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
     render(<DashboardPage />);
     expect(await screen.findByRole('button', { name: /create test/i })).toBeInTheDocument();
+  });
+
+  it('increments the Total Tests KPI when a test is created through the panel', async () => {
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'createTest').mockResolvedValue({
+      id: '1',
+      name: 'New Test',
+      target_url: 'http://x',
+      virtual_users: 5,
+      duration_seconds: 30,
+      created_at: '2026-07-26T00:00:00Z',
+    });
+
+    render(<DashboardPage />);
+
+    const totalTileBefore = await screen.findByText('Total Tests');
+    expect(totalTileBefore.closest('div')?.textContent).toContain('0');
+
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'New Test' } });
+    fireEvent.change(screen.getByLabelText(/target url/i), { target: { value: 'http://x' } });
+    fireEvent.change(screen.getByLabelText(/virtual users/i), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText(/duration/i), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: /create test/i }));
+
+    await waitFor(() => {
+      const totalTile = screen.getByText('Total Tests');
+      expect(totalTile.closest('div')?.textContent).toContain('1');
+    });
   });
 });

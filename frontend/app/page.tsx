@@ -28,6 +28,10 @@ export default function DashboardPage() {
       });
   }, []);
 
+  function handleTestCreated(t: Test) {
+    setTests((prev) => [t, ...prev]);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold text-text">Dashboard</h1>
@@ -36,7 +40,7 @@ export default function DashboardPage() {
         <KpiTile label="Active Runs" value={activeRuns} />
       </div>
       <div className="hidden md:block">
-        <TestManagementPanel />
+        <TestManagementPanel onTestCreated={handleTestCreated} />
       </div>
     </div>
   );

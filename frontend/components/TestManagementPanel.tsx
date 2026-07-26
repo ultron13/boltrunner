@@ -6,7 +6,7 @@ import { listTests, startRun, Test } from '@/lib/api-client';
 import { CreateTestForm } from '@/components/CreateTestForm';
 import { TestList } from '@/components/TestList';
 
-export function TestManagementPanel() {
+export function TestManagementPanel({ onTestCreated }: { onTestCreated?: (test: Test) => void } = {}) {
   const [tests, setTests] = useState<Test[]>([]);
   const router = useRouter();
 
@@ -23,6 +23,7 @@ export function TestManagementPanel() {
 
   function handleCreated(t: Test) {
     setTests((prev) => [t, ...prev]);
+    onTestCreated?.(t);
   }
 
   return (
