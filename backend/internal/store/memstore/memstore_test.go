@@ -162,6 +162,36 @@ func TestUpdateTestPreservesFamilyCreatedAt(t *testing.T) {
 	}
 }
 
+func TestUpdateTestDoesNotReorderListTests(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestStore()
+
+	older := &model.Test{Name: "older", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
+	_ = ts.CreateTest(ctx, older)
+	time.Sleep(5 * time.Millisecond)
+	newer := &model.Test{Name: "newer", TargetURL: "http://b", VirtualUsers: 1, DurationSeconds: 1}
+	_ = ts.CreateTest(ctx, newer)
+
+	// Editing the older test must not promote it: list order follows when each
+	// test was first created, not when it was last touched.
+	time.Sleep(5 * time.Millisecond)
+	edit := &model.Test{ID: older.ID, Name: "older", TargetURL: "http://a2", VirtualUsers: 1, DurationSeconds: 1}
+	if err := ts.UpdateTest(ctx, edit); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+
+	all, err := ts.ListTests(ctx)
+	if err != nil {
+		t.Fatalf("ListTests: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected 2 families, got %d", len(all))
+	}
+	if all[0].ID != newer.ID || all[1].ID != older.ID {
+		t.Fatalf("expected [newer, older] after editing older, got [%s, %s]", all[0].Name, all[1].Name)
+	}
+}
+
 func TestUpdateTestUnknownCatalogIDIsNotFound(t *testing.T) {
 	ctx := context.Background()
 	ts := NewTestStore()

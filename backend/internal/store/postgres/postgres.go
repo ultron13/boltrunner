@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -240,13 +241,17 @@ func (db *DB) UpdateTest(ctx context.Context, t *model.Test) error {
 	if err != nil {
 		return err // ErrNotFound propagates
 	}
-	return db.updateTestAtVersion(ctx, t, latest.Version+1, latest.ProjectID)
+	return db.updateTestAtVersion(ctx, t, latest.Version+1, latest.ProjectID, latest.CreatedAt)
 }
 
 // updateTestAtVersion inserts t as an explicit version number. The unique index
 // on (catalog_id, version) is what turns a lost read-then-write race into
 // ErrConflict instead of a silently forked version.
-func (db *DB) updateTestAtVersion(ctx context.Context, t *model.Test, version int, projectID string) error {
+//
+// familyCreatedAt is passed in rather than re-queried: the caller already read
+// it, and re-reading would mean either a second round-trip or an error we
+// cannot report without contradicting an INSERT that already succeeded.
+func (db *DB) updateTestAtVersion(ctx context.Context, t *model.Test, version int, projectID string, familyCreatedAt time.Time) error {
 	versionID := uuid.NewString()
 	err := db.Pool.QueryRow(ctx,
 		`INSERT INTO tests (id, catalog_id, version, name, target_url, virtual_users, duration_seconds, project_id)
@@ -261,11 +266,7 @@ func (db *DB) updateTestAtVersion(ctx context.Context, t *model.Test, version in
 		return err
 	}
 	t.ProjectID = projectID
-	// Refresh CreatedAt so it reports the family's first creation, not this
-	// version's.
-	if refreshed, err := db.GetTest(ctx, t.ID); err == nil {
-		t.CreatedAt = refreshed.CreatedAt
-	}
+	t.CreatedAt = familyCreatedAt
 	return nil
 }
 

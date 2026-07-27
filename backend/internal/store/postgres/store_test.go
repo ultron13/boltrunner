@@ -632,7 +632,7 @@ func TestUpdateTestConflictsOnDuplicateVersion(t *testing.T) {
 	// tries to write version 2 and must lose against the unique index.
 	err := db.updateTestAtVersion(ctx,
 		&model.Test{ID: tst.ID, Name: "pg-conflict", TargetURL: "http://b", VirtualUsers: 1, DurationSeconds: 1},
-		2, tst.ProjectID)
+		2, tst.ProjectID, tst.CreatedAt)
 	if !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("expected ErrConflict, got %v", err)
 	}
