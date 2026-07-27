@@ -33,6 +33,7 @@ type faultyTestStore struct {
 	getErr    error
 	createErr error
 	listErr   error
+	updateErr error
 }
 
 func (f *faultyTestStore) GetTest(ctx context.Context, id string) (*model.Test, error) {
@@ -47,6 +48,13 @@ func (f *faultyTestStore) CreateTest(ctx context.Context, t *model.Test) error {
 		return f.createErr
 	}
 	return f.TestStore.CreateTest(ctx, t)
+}
+
+func (f *faultyTestStore) UpdateTest(ctx context.Context, t *model.Test) error {
+	if f.updateErr != nil {
+		return f.updateErr
+	}
+	return f.TestStore.UpdateTest(ctx, t)
 }
 
 func (f *faultyTestStore) ListTests(ctx context.Context) ([]model.Test, error) {
@@ -389,6 +397,56 @@ func TestListTestsStoreError(t *testing.T) {
 	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tests", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- handleUpdateTest error branches ---
+
+func TestUpdateTestConflictReturns409(t *testing.T) {
+	realTS := memstore.NewTestStore()
+	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = realTS.CreateTest(context.Background(), test)
+	ts := &faultyTestStore{TestStore: realTS, updateErr: store.ErrConflict}
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+
+	body, _ := json.Marshal(map[string]any{
+		"name": "smoke-renamed", "target_url": "http://example.com",
+		"virtual_users": 10, "duration_seconds": 30,
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+test.ID, bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Code == http.StatusNotFound {
+		t.Fatalf("ErrConflict must not be reported as 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Code == http.StatusInternalServerError {
+		t.Fatalf("ErrConflict must not be reported as 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateTestStoreErrorReturns500(t *testing.T) {
+	realTS := memstore.NewTestStore()
+	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
+	_ = realTS.CreateTest(context.Background(), test)
+	ts := &faultyTestStore{TestStore: realTS, updateErr: errBoom}
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+
+	body, _ := json.Marshal(map[string]any{
+		"name": "smoke-renamed", "target_url": "http://example.com",
+		"virtual_users": 10, "duration_seconds": 30,
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+test.ID, bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Router().ServeHTTP(rec, req)
 
