@@ -3,12 +3,15 @@ package postgres
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/boltrunner/backend/internal/model"
@@ -143,20 +146,51 @@ func nullableUUID(id string) any {
 	return id
 }
 
+// testColumns is the projection every test read shares. catalog_id is exposed
+// as the model's ID, and the family's earliest created_at is the test's
+// CreatedAt, so editing a test never appears to change when it was created.
+const testColumns = `catalog_id, id, version, project_id, name, target_url, virtual_users, duration_seconds,
+       MIN(created_at) OVER (PARTITION BY catalog_id) AS catalog_created_at, created_at`
+
+type testScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanTest(row testScanner, t *model.Test) error {
+	return row.Scan(&t.ID, &t.VersionID, &t.Version, &t.ProjectID, &t.Name,
+		&t.TargetURL, &t.VirtualUsers, &t.DurationSeconds, &t.CreatedAt, &t.UpdatedAt)
+}
+
+// isUniqueViolation reports whether err is SQLSTATE 23505 (unique_violation) --
+// here, two concurrent edits racing for the same (catalog_id, version).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
 func (db *DB) CreateTest(ctx context.Context, t *model.Test) error {
+	// The id is generated here so the row can reference it as its own
+	// catalog_id in a single INSERT.
+	id := uuid.NewString()
 	return db.Pool.QueryRow(ctx,
-		`INSERT INTO tests (name, target_url, virtual_users, duration_seconds, project_id)
-		 VALUES ($1, $2, $3, $4,
-		         COALESCE($5, (SELECT id FROM projects WHERE name = 'Default')))
-		 RETURNING id, project_id, created_at`,
-		t.Name, t.TargetURL, t.VirtualUsers, t.DurationSeconds, nullableUUID(t.ProjectID),
-	).Scan(&t.ID, &t.ProjectID, &t.CreatedAt)
+		`INSERT INTO tests (id, catalog_id, version, name, target_url, virtual_users, duration_seconds, project_id)
+		 VALUES ($1, $1, 1, $2, $3, $4, $5,
+		         COALESCE($6, (SELECT id FROM projects WHERE name = 'Default')))
+		 RETURNING catalog_id, id, version, project_id, created_at, created_at`,
+		id, t.Name, t.TargetURL, t.VirtualUsers, t.DurationSeconds, nullableUUID(t.ProjectID),
+	).Scan(&t.ID, &t.VersionID, &t.Version, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt)
 }
 
 func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, project_id, name, target_url, virtual_users, duration_seconds, created_at
-		 FROM tests ORDER BY created_at DESC`)
+		`SELECT catalog_id, id, version, project_id, name, target_url, virtual_users,
+		        duration_seconds, catalog_created_at, created_at
+		 FROM (
+		     SELECT DISTINCT ON (catalog_id) `+testColumns+`
+		     FROM tests
+		     ORDER BY catalog_id, version DESC
+		 ) latest
+		 ORDER BY catalog_created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +198,7 @@ func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {
 	out := []model.Test{}
 	for rows.Next() {
 		var t model.Test
-		if err := rows.Scan(&t.ID, &t.ProjectID, &t.Name, &t.TargetURL, &t.VirtualUsers, &t.DurationSeconds, &t.CreatedAt); err != nil {
+		if err := scanTest(rows, &t); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -172,16 +206,67 @@ func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {
 	return out, rows.Err()
 }
 
-func (db *DB) GetTest(ctx context.Context, id string) (*model.Test, error) {
+func (db *DB) GetTest(ctx context.Context, catalogID string) (*model.Test, error) {
 	var t model.Test
-	err := db.Pool.QueryRow(ctx,
-		`SELECT id, project_id, name, target_url, virtual_users, duration_seconds, created_at
-		 FROM tests WHERE id = $1`, id,
-	).Scan(&t.ID, &t.ProjectID, &t.Name, &t.TargetURL, &t.VirtualUsers, &t.DurationSeconds, &t.CreatedAt)
+	err := scanTest(db.Pool.QueryRow(ctx,
+		`SELECT `+testColumns+` FROM tests WHERE catalog_id = $1 ORDER BY version DESC LIMIT 1`,
+		catalogID), &t)
 	if err == pgx.ErrNoRows {
 		return nil, store.ErrNotFound
 	}
 	return &t, err
+}
+
+func (db *DB) ListTestVersions(ctx context.Context, catalogID string) ([]model.Test, error) {
+	rows, err := db.Pool.Query(ctx,
+		`SELECT `+testColumns+` FROM tests WHERE catalog_id = $1 ORDER BY version DESC`, catalogID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Test{}
+	for rows.Next() {
+		var t model.Test
+		if err := scanTest(rows, &t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) UpdateTest(ctx context.Context, t *model.Test) error {
+	latest, err := db.GetTest(ctx, t.ID)
+	if err != nil {
+		return err // ErrNotFound propagates
+	}
+	return db.updateTestAtVersion(ctx, t, latest.Version+1, latest.ProjectID)
+}
+
+// updateTestAtVersion inserts t as an explicit version number. The unique index
+// on (catalog_id, version) is what turns a lost read-then-write race into
+// ErrConflict instead of a silently forked version.
+func (db *DB) updateTestAtVersion(ctx context.Context, t *model.Test, version int, projectID string) error {
+	versionID := uuid.NewString()
+	err := db.Pool.QueryRow(ctx,
+		`INSERT INTO tests (id, catalog_id, version, name, target_url, virtual_users, duration_seconds, project_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 RETURNING id, version, created_at`,
+		versionID, t.ID, version, t.Name, t.TargetURL, t.VirtualUsers, t.DurationSeconds, projectID,
+	).Scan(&t.VersionID, &t.Version, &t.UpdatedAt)
+	if isUniqueViolation(err) {
+		return store.ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	t.ProjectID = projectID
+	// Refresh CreatedAt so it reports the family's first creation, not this
+	// version's.
+	if refreshed, err := db.GetTest(ctx, t.ID); err == nil {
+		t.CreatedAt = refreshed.CreatedAt
+	}
+	return nil
 }
 
 func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
@@ -203,26 +288,29 @@ func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 
 func (db *DB) CreateRun(ctx context.Context, r *model.Run) error {
 	return db.Pool.QueryRow(ctx,
-		`INSERT INTO runs (test_id, status) VALUES ($1, $2) RETURNING id, created_at`,
-		r.TestID, r.Status,
-	).Scan(&r.ID, &r.CreatedAt)
+		`INSERT INTO runs (test_id, test_catalog_id, status)
+		 VALUES ($1, COALESCE($2, (SELECT catalog_id FROM tests WHERE id = $1)), $3)
+		 RETURNING id, test_catalog_id, created_at`,
+		r.TestID, nullableUUID(r.TestCatalogID), r.Status,
+	).Scan(&r.ID, &r.TestCatalogID, &r.CreatedAt)
 }
 
 func (db *DB) GetRun(ctx context.Context, id string) (*model.Run, error) {
 	var r model.Run
 	err := db.Pool.QueryRow(ctx,
-		`SELECT id, test_id, status, created_at, started_at, completed_at, error_message FROM runs WHERE id = $1`, id,
-	).Scan(&r.ID, &r.TestID, &r.Status, &r.CreatedAt, &r.StartedAt, &r.CompletedAt, &r.ErrorMessage)
+		`SELECT id, test_id, test_catalog_id, status, created_at, started_at, completed_at, error_message
+		 FROM runs WHERE id = $1`, id,
+	).Scan(&r.ID, &r.TestID, &r.TestCatalogID, &r.Status, &r.CreatedAt, &r.StartedAt, &r.CompletedAt, &r.ErrorMessage)
 	if err == pgx.ErrNoRows {
 		return nil, store.ErrNotFound
 	}
 	return &r, err
 }
 
-func (db *DB) ListByTest(ctx context.Context, testID string) ([]model.Run, error) {
+func (db *DB) ListByTest(ctx context.Context, catalogID string) ([]model.Run, error) {
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, test_id, status, created_at, started_at, completed_at, error_message
-		 FROM runs WHERE test_id = $1 ORDER BY created_at DESC`, testID)
+		`SELECT id, test_id, test_catalog_id, status, created_at, started_at, completed_at, error_message
+		 FROM runs WHERE test_catalog_id = $1 ORDER BY created_at DESC`, catalogID)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +318,7 @@ func (db *DB) ListByTest(ctx context.Context, testID string) ([]model.Run, error
 	out := []model.Run{}
 	for rows.Next() {
 		var r model.Run
-		if err := rows.Scan(&r.ID, &r.TestID, &r.Status, &r.CreatedAt, &r.StartedAt, &r.CompletedAt, &r.ErrorMessage); err != nil {
+		if err := rows.Scan(&r.ID, &r.TestID, &r.TestCatalogID, &r.Status, &r.CreatedAt, &r.StartedAt, &r.CompletedAt, &r.ErrorMessage); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

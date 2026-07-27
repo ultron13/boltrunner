@@ -25,6 +25,11 @@ func NewRunStore() *RunStore {
 func (s *RunStore) CreateRun(ctx context.Context, r *model.Run) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if r.TestCatalogID == "" {
+		// For an unversioned caller the test id *is* the catalog id, matching
+		// the postgres COALESCE fallback.
+		r.TestCatalogID = r.TestID
+	}
 	r.ID = uuid.NewString()
 	r.CreatedAt = time.Now().UTC()
 	s.runs[r.ID] = *r
@@ -41,12 +46,12 @@ func (s *RunStore) GetRun(ctx context.Context, id string) (*model.Run, error) {
 	return &r, nil
 }
 
-func (s *RunStore) ListByTest(ctx context.Context, testID string) ([]model.Run, error) {
+func (s *RunStore) ListByTest(ctx context.Context, catalogID string) ([]model.Run, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := []model.Run{}
 	for _, r := range s.runs {
-		if r.TestID == testID {
+		if r.TestCatalogID == catalogID {
 			out = append(out, r)
 		}
 	}

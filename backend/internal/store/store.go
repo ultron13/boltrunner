@@ -7,12 +7,22 @@ import (
 	"github.com/boltrunner/backend/internal/model"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound = errors.New("not found")
+	// ErrConflict means a concurrent edit already claimed the version number
+	// this update tried to write.
+	ErrConflict = errors.New("conflict")
+)
 
 type TestStore interface {
 	CreateTest(ctx context.Context, t *model.Test) error
 	ListTests(ctx context.Context) ([]model.Test, error)
-	GetTest(ctx context.Context, id string) (*model.Test, error)
+	GetTest(ctx context.Context, catalogID string) (*model.Test, error)
+	// UpdateTest writes a new immutable version of t.ID's test rather than
+	// mutating the current one.
+	UpdateTest(ctx context.Context, t *model.Test) error
+	// ListTestVersions returns every version of a test, newest first.
+	ListTestVersions(ctx context.Context, catalogID string) ([]model.Test, error)
 }
 
 type RunStore interface {

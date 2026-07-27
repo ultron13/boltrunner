@@ -26,7 +26,7 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run := &model.Run{TestID: test.ID, Status: model.RunPending}
+	run := &model.Run{TestID: test.VersionID, TestCatalogID: test.ID, Status: model.RunPending}
 	if err := s.runStore.CreateRun(r.Context(), run); err != nil {
 		http.Error(w, "failed to create run", http.StatusInternalServerError)
 		return

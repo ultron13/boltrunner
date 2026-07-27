@@ -507,6 +507,221 @@ func TestListProjectsIncludesSeededDefaultAndIsNeverNil(t *testing.T) {
 	}
 }
 
+func TestUpdateTestCreatesNewVersionAndPinsOldRuns(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	v1 := &model.Test{Name: "pg-versioning", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 10}
+	if err := db.CreateTest(ctx, v1); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	if v1.Version != 1 || v1.VersionID == "" {
+		t.Fatalf("expected v1 with a VersionID, got v%d/%q", v1.Version, v1.VersionID)
+	}
+
+	// A run of v1, pinned to the exact version that executed.
+	run := &model.Run{TestID: v1.VersionID, TestCatalogID: v1.ID, Status: model.RunCompleted}
+	if err := db.CreateRun(ctx, run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+
+	edit := &model.Test{ID: v1.ID, Name: "pg-versioning", TargetURL: "http://b", VirtualUsers: 2, DurationSeconds: 20}
+	if err := db.UpdateTest(ctx, edit); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+	if edit.Version != 2 || edit.ID != v1.ID {
+		t.Fatalf("expected v2 under the same catalog id, got v%d/%q", edit.Version, edit.ID)
+	}
+
+	latest, err := db.GetTest(ctx, v1.ID)
+	if err != nil || latest.Version != 2 || latest.TargetURL != "http://b" {
+		t.Fatalf("GetTest: %+v, err=%v", latest, err)
+	}
+
+	// The pinned run still points at v1, whose config is untouched.
+	got, err := db.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.TestID != v1.VersionID {
+		t.Fatalf("expected the run to stay pinned to %q, got %q", v1.VersionID, got.TestID)
+	}
+	if got.TestCatalogID != v1.ID {
+		t.Fatalf("expected the run's catalog id to be %q, got %q", v1.ID, got.TestCatalogID)
+	}
+
+	versions, err := db.ListTestVersions(ctx, v1.ID)
+	if err != nil {
+		t.Fatalf("ListTestVersions: %v", err)
+	}
+	if len(versions) != 2 || versions[0].Version != 2 || versions[1].Version != 1 {
+		t.Fatalf("expected newest-first [v2 v1], got %d versions", len(versions))
+	}
+	if versions[1].TargetURL != "http://a" {
+		t.Fatalf("expected v1 to keep http://a, got %q", versions[1].TargetURL)
+	}
+
+	// Run history is family-scoped: still found via the catalog id.
+	runs, err := db.ListByTest(ctx, v1.ID)
+	if err != nil {
+		t.Fatalf("ListByTest: %v", err)
+	}
+	found := false
+	for _, r := range runs {
+		if r.ID == run.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected the v1 run to still appear in the test's history after the edit")
+	}
+}
+
+func TestListTestsReturnsOneRowPerFamily(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "pg-one-row", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
+	_ = db.CreateTest(ctx, tst)
+	edit := &model.Test{ID: tst.ID, Name: "pg-one-row", TargetURL: "http://b", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.UpdateTest(ctx, edit); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+
+	all, err := db.ListTests(ctx)
+	if err != nil {
+		t.Fatalf("ListTests: %v", err)
+	}
+	seen := 0
+	for _, got := range all {
+		if got.ID == tst.ID {
+			seen++
+			if got.Version != 2 {
+				t.Fatalf("expected the latest version, got v%d", got.Version)
+			}
+			if !got.CreatedAt.Equal(tst.CreatedAt) {
+				t.Fatalf("expected the family's original CreatedAt %v, got %v", tst.CreatedAt, got.CreatedAt)
+			}
+			if !got.UpdatedAt.After(got.CreatedAt) {
+				t.Fatalf("expected UpdatedAt after CreatedAt, got %v vs %v", got.UpdatedAt, got.CreatedAt)
+			}
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("expected exactly 1 row for the family, got %d", seen)
+	}
+}
+
+func TestUpdateTestConflictsOnDuplicateVersion(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "pg-conflict", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
+	_ = db.CreateTest(ctx, tst)
+
+	// Claim version 2 directly, simulating the winner of a race.
+	if _, err := db.Pool.Exec(ctx,
+		`INSERT INTO tests (catalog_id, version, name, target_url, virtual_users, duration_seconds, project_id)
+		 VALUES ($1, 2, 'pg-conflict', 'http://race', 1, 1, $2)`,
+		tst.ID, tst.ProjectID,
+	); err != nil {
+		t.Fatalf("seed racing version: %v", err)
+	}
+
+	// UpdateTest read version 1 as latest before the race landed, so it also
+	// tries to write version 2 and must lose against the unique index.
+	err := db.updateTestAtVersion(ctx,
+		&model.Test{ID: tst.ID, Name: "pg-conflict", TargetURL: "http://b", VirtualUsers: 1, DurationSeconds: 1},
+		2, tst.ProjectID)
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestUpdateTestUnknownCatalogIDIsNotFound(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	err := db.UpdateTest(ctx, &model.Test{
+		ID: "00000000-0000-0000-0000-000000000000", Name: "x",
+		TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1,
+	})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestListTestVersionsUnknownIDIsEmptyNotNil(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	versions, err := db.ListTestVersions(ctx, "00000000-0000-0000-0000-000000000000")
+	if err != nil {
+		t.Fatalf("ListTestVersions: %v", err)
+	}
+	if versions == nil {
+		t.Fatal("expected an empty slice, got nil")
+	}
+	if len(versions) != 0 {
+		t.Fatalf("expected 0 versions, got %d", len(versions))
+	}
+}
+
+func TestMigrateBackfillsVersioningForLegacyRows(t *testing.T) {
+	ctx := context.Background()
+	db := newScratchDB(t, 2) // pre-0003, pre-0004
+
+	var legacyTestID, legacyRunID string
+	if err := db.Pool.QueryRow(ctx,
+		`INSERT INTO tests (name, target_url, virtual_users, duration_seconds)
+		 VALUES ('legacy', 'http://example.com', 1, 1) RETURNING id`,
+	).Scan(&legacyTestID); err != nil {
+		t.Fatalf("insert legacy test: %v", err)
+	}
+	if err := db.Pool.QueryRow(ctx,
+		`INSERT INTO runs (test_id, status) VALUES ($1, 'completed') RETURNING id`, legacyTestID,
+	).Scan(&legacyRunID); err != nil {
+		t.Fatalf("insert legacy run: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	var catalogID string
+	var version int
+	if err := db.Pool.QueryRow(ctx,
+		`SELECT catalog_id, version FROM tests WHERE id = $1`, legacyTestID,
+	).Scan(&catalogID, &version); err != nil {
+		t.Fatalf("read backfilled test: %v", err)
+	}
+	if catalogID != legacyTestID {
+		t.Fatalf("expected catalog_id to be backfilled to the row's own id %q, got %q", legacyTestID, catalogID)
+	}
+	if version != 1 {
+		t.Fatalf("expected version 1, got %d", version)
+	}
+
+	var runCatalogID string
+	if err := db.Pool.QueryRow(ctx,
+		`SELECT test_catalog_id FROM runs WHERE id = $1`, legacyRunID,
+	).Scan(&runCatalogID); err != nil {
+		t.Fatalf("read backfilled run: %v", err)
+	}
+	if runCatalogID != legacyTestID {
+		t.Fatalf("expected the run's test_catalog_id to be %q, got %q", legacyTestID, runCatalogID)
+	}
+
+	// The upgraded database must be usable by the new code path too.
+	got, err := db.GetTest(ctx, legacyTestID)
+	if err != nil {
+		t.Fatalf("GetTest after upgrade: %v", err)
+	}
+	if got.Version != 1 || got.VersionID != legacyTestID {
+		t.Fatalf("expected v1 with VersionID %q, got v%d/%q", legacyTestID, got.Version, got.VersionID)
+	}
+}
+
 func TestCreateTestDefaultsToDefaultProject(t *testing.T) {
 	db := setupDB(t)
 	ctx := context.Background()

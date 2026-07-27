@@ -121,3 +121,35 @@ func TestLatestSnapshotNotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestCreateRunDerivesTestCatalogIDFromTestID(t *testing.T) {
+	ctx := context.Background()
+	rs := NewRunStore()
+
+	run := &model.Run{TestID: "version-1-id", Status: model.RunPending}
+	if err := rs.CreateRun(ctx, run); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if run.TestCatalogID != "version-1-id" {
+		t.Fatalf("expected the catalog id to default to the test id, got %q", run.TestCatalogID)
+	}
+}
+
+func TestListByTestGroupsRunsAcrossVersions(t *testing.T) {
+	ctx := context.Background()
+	rs := NewRunStore()
+
+	// Two runs of the same test, executed against different versions.
+	first := &model.Run{TestID: "v1", TestCatalogID: "catalog", Status: model.RunCompleted}
+	_ = rs.CreateRun(ctx, first)
+	second := &model.Run{TestID: "v2", TestCatalogID: "catalog", Status: model.RunCompleted}
+	_ = rs.CreateRun(ctx, second)
+
+	runs, err := rs.ListByTest(ctx, "catalog")
+	if err != nil {
+		t.Fatalf("ListByTest: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("expected both versions' runs, got %d", len(runs))
+	}
+}

@@ -13,13 +13,16 @@ const (
 )
 
 type Test struct {
-	ID              string    `json:"id"`
+	ID              string    `json:"id"`         // catalog id: stable across versions
+	VersionID       string    `json:"version_id"` // primary key of this version row
+	Version         int       `json:"version"`
 	ProjectID       string    `json:"project_id"`
 	Name            string    `json:"name"`
 	TargetURL       string    `json:"target_url"`
 	VirtualUsers    int       `json:"virtual_users"`
 	DurationSeconds int       `json:"duration_seconds"`
-	CreatedAt       time.Time `json:"created_at"`
+	CreatedAt       time.Time `json:"created_at"` // when the test was first created
+	UpdatedAt       time.Time `json:"updated_at"` // when this version was cut
 }
 
 type Project struct {
@@ -29,13 +32,14 @@ type Project struct {
 }
 
 type Run struct {
-	ID           string     `json:"id"`
-	TestID       string     `json:"test_id"`
-	Status       RunStatus  `json:"status"`
-	CreatedAt    time.Time  `json:"created_at"`
-	StartedAt    *time.Time `json:"started_at,omitempty"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
-	ErrorMessage string     `json:"error_message,omitempty"`
+	ID            string     `json:"id"`
+	TestID        string     `json:"test_id"`
+	TestCatalogID string     `json:"test_catalog_id"`
+	Status        RunStatus  `json:"status"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	ErrorMessage  string     `json:"error_message,omitempty"`
 }
 
 type RunMetricSnapshot struct {
