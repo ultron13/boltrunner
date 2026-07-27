@@ -65,7 +65,7 @@ func main() {
 	defer cancel()
 	go w.Run(watchCtx, 2*time.Second)
 
-	s := api.NewServer(db, db, k8sClient, jobCfg)
+	s := api.NewServer(db, db, db, k8sClient, jobCfg)
 	log.Println("listening on :8080")
 	if err := http.ListenAndServe(":8080", s.Router()); err != nil {
 		log.Fatal(err)

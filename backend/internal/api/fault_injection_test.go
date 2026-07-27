@@ -110,8 +110,9 @@ func (f *faultyRunStore) ListSnapshots(ctx context.Context, runID string) ([]mod
 }
 
 func newServerWithStores(ts store.TestStore, rs store.RunStore, k8sClient *k8sfake.Clientset) *Server {
+	ps := memstore.NewProjectStore()
 	cfg := k8sjob.Config{Namespace: "boltrunner", JMeterImage: "jmeter:local", SidecarImage: "sidecar:local", BackendURL: "http://backend:8080"}
-	return NewServer(ts, rs, k8sClient, cfg)
+	return NewServer(ts, rs, ps, k8sClient, cfg)
 }
 
 // --- handleStartRun error branches ---

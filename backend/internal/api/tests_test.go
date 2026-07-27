@@ -47,3 +47,164 @@ func TestCreateAndListTests(t *testing.T) {
 		t.Fatalf("expected 1 test, got %d", len(list))
 	}
 }
+
+func createTestViaAPI(t *testing.T, s *Server, name string) model.Test {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{
+		"name": name, "target_url": "http://example.com",
+		"virtual_users": 1, "duration_seconds": 1,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/tests", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("seed test: expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var created model.Test
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode seeded test: %v", err)
+	}
+	return created
+}
+
+func TestUpdateTestCreatesANewVersion(t *testing.T) {
+	s := newTestServer()
+	created := createTestViaAPI(t, s, "editable")
+
+	body, _ := json.Marshal(map[string]any{
+		"name": "editable", "target_url": "http://changed",
+		"virtual_users": 7, "duration_seconds": 70,
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+created.ID, bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var updated model.Test
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if updated.Version != 2 {
+		t.Fatalf("expected version 2, got %d", updated.Version)
+	}
+	if updated.ID != created.ID {
+		t.Fatalf("expected a stable catalog id %q, got %q", created.ID, updated.ID)
+	}
+	if updated.TargetURL != "http://changed" {
+		t.Fatalf("expected the edited target url, got %q", updated.TargetURL)
+	}
+}
+
+func TestUpdateTestValidatesBodyAndID(t *testing.T) {
+	s := newTestServer()
+	created := createTestViaAPI(t, s, "validated")
+
+	// Malformed JSON.
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+created.ID, bytes.NewReader([]byte("{")))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed json, got %d", rec.Code)
+	}
+
+	// Valid JSON, invalid values.
+	bad, _ := json.Marshal(map[string]any{
+		"name": "", "target_url": "", "virtual_users": 0, "duration_seconds": 0,
+	})
+	req2 := httptest.NewRequest(http.MethodPut, "/api/tests/"+created.ID, bytes.NewReader(bad))
+	rec2 := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid values, got %d", rec2.Code)
+	}
+
+	// Unknown test.
+	good, _ := json.Marshal(map[string]any{
+		"name": "x", "target_url": "http://example.com",
+		"virtual_users": 1, "duration_seconds": 1,
+	})
+	req3 := httptest.NewRequest(http.MethodPut, "/api/tests/missing", bytes.NewReader(good))
+	rec3 := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec3, req3)
+	if rec3.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for an unknown test, got %d", rec3.Code)
+	}
+}
+
+func TestListTestVersionsReturnsNewestFirst(t *testing.T) {
+	s := newTestServer()
+	created := createTestViaAPI(t, s, "history")
+
+	body, _ := json.Marshal(map[string]any{
+		"name": "history", "target_url": "http://v2",
+		"virtual_users": 1, "duration_seconds": 1,
+	})
+	putReq := httptest.NewRequest(http.MethodPut, "/api/tests/"+created.ID, bytes.NewReader(body))
+	s.Router().ServeHTTP(httptest.NewRecorder(), putReq)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tests/"+created.ID+"/versions", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var versions []model.Test
+	if err := json.Unmarshal(rec.Body.Bytes(), &versions); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(versions))
+	}
+	if versions[0].Version != 2 || versions[1].Version != 1 {
+		t.Fatalf("expected newest-first, got v%d then v%d", versions[0].Version, versions[1].Version)
+	}
+}
+
+func TestListTestVersionsUnknownTestIs404(t *testing.T) {
+	s := newTestServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tests/missing/versions", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestListProjectsReturnsTheDefaultProject(t *testing.T) {
+	s := newTestServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var projects []model.Project
+	if err := json.Unmarshal(rec.Body.Bytes(), &projects); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(projects) != 1 || projects[0].Name != "Default" {
+		t.Fatalf("expected exactly the Default project, got %+v", projects)
+	}
+}
+
+func TestCreatedTestBelongsToTheDefaultProject(t *testing.T) {
+	s := newTestServer()
+	created := createTestViaAPI(t, s, "projected")
+
+	if created.ProjectID == "" {
+		t.Fatal("expected the created test to carry a project id")
+	}
+	if created.Version != 1 {
+		t.Fatalf("expected version 1, got %d", created.Version)
+	}
+	if created.VersionID == "" {
+		t.Fatal("expected a version_id")
+	}
+}

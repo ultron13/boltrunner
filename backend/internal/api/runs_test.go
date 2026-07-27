@@ -18,9 +18,10 @@ import (
 func newTestServer() *Server {
 	ts := memstore.NewTestStore()
 	rs := memstore.NewRunStore()
+	ps := memstore.NewProjectStore()
 	fakeClient := k8sfake.NewSimpleClientset()
 	cfg := k8sjob.Config{Namespace: "boltrunner", JMeterImage: "jmeter:local", SidecarImage: "sidecar:local", BackendURL: "http://backend:8080"}
-	return NewServer(ts, rs, fakeClient, cfg)
+	return NewServer(ts, rs, ps, fakeClient, cfg)
 }
 
 func metaListOpts() (opts metav1.ListOptions) { return }
