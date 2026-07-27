@@ -23,6 +23,9 @@ func NewTestStore() *TestStore {
 func (s *TestStore) CreateTest(ctx context.Context, t *model.Test) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if t.ProjectID == "" {
+		t.ProjectID = DefaultProjectID
+	}
 	t.ID = uuid.NewString()
 	t.CreatedAt = time.Now().UTC()
 	s.tests[t.ID] = *t

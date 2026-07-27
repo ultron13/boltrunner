@@ -14,11 +14,18 @@ const (
 
 type Test struct {
 	ID              string    `json:"id"`
+	ProjectID       string    `json:"project_id"`
 	Name            string    `json:"name"`
 	TargetURL       string    `json:"target_url"`
 	VirtualUsers    int       `json:"virtual_users"`
 	DurationSeconds int       `json:"duration_seconds"`
 	CreatedAt       time.Time `json:"created_at"`
+}
+
+type Project struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Run struct {

@@ -24,3 +24,7 @@ type RunStore interface {
 	LatestSnapshot(ctx context.Context, runID string) (*model.RunMetricSnapshot, error)
 	ListSnapshots(ctx context.Context, runID string) ([]model.RunMetricSnapshot, error)
 }
+
+type ProjectStore interface {
+	ListProjects(ctx context.Context) ([]model.Project, error)
+}

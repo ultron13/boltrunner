@@ -134,16 +134,29 @@ func (db *DB) applyMigration(ctx context.Context, version int, body string) erro
 	return tx.Commit(ctx)
 }
 
+// nullableUUID converts an empty id to a SQL NULL so COALESCE can substitute a
+// default; pgx would otherwise reject "" as a malformed UUID.
+func nullableUUID(id string) any {
+	if id == "" {
+		return nil
+	}
+	return id
+}
+
 func (db *DB) CreateTest(ctx context.Context, t *model.Test) error {
 	return db.Pool.QueryRow(ctx,
-		`INSERT INTO tests (name, target_url, virtual_users, duration_seconds)
-		 VALUES ($1, $2, $3, $4) RETURNING id, created_at`,
-		t.Name, t.TargetURL, t.VirtualUsers, t.DurationSeconds,
-	).Scan(&t.ID, &t.CreatedAt)
+		`INSERT INTO tests (name, target_url, virtual_users, duration_seconds, project_id)
+		 VALUES ($1, $2, $3, $4,
+		         COALESCE($5, (SELECT id FROM projects WHERE name = 'Default')))
+		 RETURNING id, project_id, created_at`,
+		t.Name, t.TargetURL, t.VirtualUsers, t.DurationSeconds, nullableUUID(t.ProjectID),
+	).Scan(&t.ID, &t.ProjectID, &t.CreatedAt)
 }
 
 func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {
-	rows, err := db.Pool.Query(ctx, `SELECT id, name, target_url, virtual_users, duration_seconds, created_at FROM tests ORDER BY created_at DESC`)
+	rows, err := db.Pool.Query(ctx,
+		`SELECT id, project_id, name, target_url, virtual_users, duration_seconds, created_at
+		 FROM tests ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +164,7 @@ func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {
 	out := []model.Test{}
 	for rows.Next() {
 		var t model.Test
-		if err := rows.Scan(&t.ID, &t.Name, &t.TargetURL, &t.VirtualUsers, &t.DurationSeconds, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &t.Name, &t.TargetURL, &t.VirtualUsers, &t.DurationSeconds, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -162,12 +175,30 @@ func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {
 func (db *DB) GetTest(ctx context.Context, id string) (*model.Test, error) {
 	var t model.Test
 	err := db.Pool.QueryRow(ctx,
-		`SELECT id, name, target_url, virtual_users, duration_seconds, created_at FROM tests WHERE id = $1`, id,
-	).Scan(&t.ID, &t.Name, &t.TargetURL, &t.VirtualUsers, &t.DurationSeconds, &t.CreatedAt)
+		`SELECT id, project_id, name, target_url, virtual_users, duration_seconds, created_at
+		 FROM tests WHERE id = $1`, id,
+	).Scan(&t.ID, &t.ProjectID, &t.Name, &t.TargetURL, &t.VirtualUsers, &t.DurationSeconds, &t.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, store.ErrNotFound
 	}
 	return &t, err
+}
+
+func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
+	rows, err := db.Pool.Query(ctx, `SELECT id, name, created_at FROM projects ORDER BY name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Project{}
+	for rows.Next() {
+		var p model.Project
+		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 func (db *DB) CreateRun(ctx context.Context, r *model.Run) error {

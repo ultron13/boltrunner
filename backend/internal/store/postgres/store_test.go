@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -393,5 +395,158 @@ func TestMigrateRecordsVersionsAndIsIdempotent(t *testing.T) {
 	}
 	if after != count {
 		t.Fatalf("expected the count to stay %d, got %d", count, after)
+	}
+}
+
+// newScratchDB creates a throwaway database, applies only the migrations up to
+// and including maxVersion, and returns a connection to it. It exists to test
+// the upgrade path of an *existing* deployment: seed legacy rows, then run the
+// full Migrate and assert the backfills.
+func newScratchDB(t *testing.T, maxVersion int) *DB {
+	t.Helper()
+	dsn := os.Getenv("BOLTRUNNER_TEST_DSN")
+	if dsn == "" {
+		t.Skip("BOLTRUNNER_TEST_DSN not set; skipping (requires a live Postgres)")
+	}
+	ctx := context.Background()
+
+	admin, err := Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("Connect (admin): %v", err)
+	}
+	defer admin.Close()
+
+	name := fmt.Sprintf("boltrunner_scratch_%d", time.Now().UnixNano())
+	if _, err := admin.Pool.Exec(ctx, `CREATE DATABASE `+name); err != nil {
+		t.Fatalf("CREATE DATABASE: %v", err)
+	}
+
+	scratchDSN, err := replaceDBName(dsn, name)
+	if err != nil {
+		t.Fatalf("replaceDBName: %v", err)
+	}
+	db, err := Connect(ctx, scratchDSN)
+	if err != nil {
+		t.Fatalf("Connect (scratch): %v", err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		cleanup, err := Connect(ctx, dsn)
+		if err != nil {
+			return
+		}
+		defer cleanup.Close()
+		cleanup.Pool.Exec(ctx, `DROP DATABASE IF EXISTS `+name)
+	})
+
+	// Apply only the migrations at or below maxVersion, simulating a
+	// deployment that predates the newer ones.
+	if _, err := db.Pool.Exec(ctx, createSchemaMigrations); err != nil {
+		t.Fatalf("create schema_migrations: %v", err)
+	}
+	names, err := migrationFilenames()
+	if err != nil {
+		t.Fatalf("migrationFilenames: %v", err)
+	}
+	for _, n := range names {
+		v, err := migrationVersion(n)
+		if err != nil {
+			t.Fatalf("migrationVersion(%s): %v", n, err)
+		}
+		if v > maxVersion {
+			continue
+		}
+		body, err := migrationsFS.ReadFile("migrations/" + n)
+		if err != nil {
+			t.Fatalf("read %s: %v", n, err)
+		}
+		if err := db.applyMigration(ctx, v, string(body)); err != nil {
+			t.Fatalf("apply %s: %v", n, err)
+		}
+	}
+	return db
+}
+
+func replaceDBName(dsn, name string) (string, error) {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "", err
+	}
+	u.Path = "/" + name
+	return u.String(), nil
+}
+
+func TestListProjectsIncludesSeededDefaultAndIsNeverNil(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	projects, err := db.ListProjects(ctx)
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if projects == nil {
+		t.Fatal("expected a non-nil slice")
+	}
+	found := false
+	for _, p := range projects {
+		if p.Name == "Default" {
+			found = true
+			if p.ID == "" || p.CreatedAt.IsZero() {
+				t.Fatalf("expected a fully populated project, got %+v", p)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected the seeded Default project")
+	}
+}
+
+func TestCreateTestDefaultsToDefaultProject(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{Name: "pg-default-project", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	if tst.ProjectID == "" {
+		t.Fatal("expected CreateTest to populate ProjectID")
+	}
+
+	got, err := db.GetTest(ctx, tst.ID)
+	if err != nil {
+		t.Fatalf("GetTest: %v", err)
+	}
+	if got.ProjectID != tst.ProjectID {
+		t.Fatalf("expected GetTest to report project %q, got %q", tst.ProjectID, got.ProjectID)
+	}
+}
+
+func TestMigrateBackfillsProjectIDForLegacyRows(t *testing.T) {
+	ctx := context.Background()
+	db := newScratchDB(t, 2) // a database as it looked before 0003
+
+	// A legacy row, inserted with no project_id because the column did not
+	// exist yet.
+	var legacyID string
+	if err := db.Pool.QueryRow(ctx,
+		`INSERT INTO tests (name, target_url, virtual_users, duration_seconds)
+		 VALUES ('legacy', 'http://example.com', 1, 1) RETURNING id`,
+	).Scan(&legacyID); err != nil {
+		t.Fatalf("insert legacy test: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	var projectName string
+	if err := db.Pool.QueryRow(ctx,
+		`SELECT p.name FROM tests t JOIN projects p ON p.id = t.project_id WHERE t.id = $1`, legacyID,
+	).Scan(&projectName); err != nil {
+		t.Fatalf("read backfilled project: %v", err)
+	}
+	if projectName != "Default" {
+		t.Fatalf("expected the legacy row to land in Default, got %q", projectName)
 	}
 }
