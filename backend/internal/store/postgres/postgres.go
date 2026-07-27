@@ -2,7 +2,11 @@ package postgres
 
 import (
 	"context"
-	_ "embed"
+	"embed"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,11 +15,18 @@ import (
 	"github.com/boltrunner/backend/internal/store"
 )
 
-//go:embed migrations/0001_init.sql
-var migration0001 string
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
-//go:embed migrations/0002_add_run_created_at.sql
-var migration0002 string
+// schema_migrations is created outside the numbered migrations because it is
+// what tracks them. Existing databases have 0001/0002 applied but unrecorded;
+// both are idempotent (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS), so the first
+// run after this change re-applies them harmlessly and records them.
+const createSchemaMigrations = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version    INTEGER PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)`
 
 type DB struct {
 	Pool *pgxpool.Pool
@@ -37,11 +48,90 @@ func (db *DB) Close() {
 }
 
 func (db *DB) Migrate(ctx context.Context) error {
-	if _, err := db.Pool.Exec(ctx, migration0001); err != nil {
+	if _, err := db.Pool.Exec(ctx, createSchemaMigrations); err != nil {
 		return err
 	}
-	_, err := db.Pool.Exec(ctx, migration0002)
-	return err
+	names, err := migrationFilenames()
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		version, err := migrationVersion(name)
+		if err != nil {
+			return err
+		}
+		applied, err := db.migrationApplied(ctx, version)
+		if err != nil {
+			return err
+		}
+		if applied {
+			continue
+		}
+		body, err := migrationsFS.ReadFile("migrations/" + name)
+		if err != nil {
+			return err
+		}
+		if err := db.applyMigration(ctx, version, string(body)); err != nil {
+			return fmt.Errorf("migration %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// migrationFilenames returns every embedded .sql migration in ascending
+// filename order, which is also version order given the NNNN_ prefix.
+func migrationFilenames() ([]string, error) {
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// migrationVersion parses the leading integer of a migration filename, so
+// "0003_projects.sql" yields 3.
+func migrationVersion(name string) (int, error) {
+	i := strings.IndexByte(name, '_')
+	if i <= 0 {
+		return 0, fmt.Errorf("migration %q must be named <version>_<description>.sql", name)
+	}
+	v, err := strconv.Atoi(name[:i])
+	if err != nil {
+		return 0, fmt.Errorf("migration %q has a non-numeric version prefix: %w", name, err)
+	}
+	return v, nil
+}
+
+func (db *DB) migrationApplied(ctx context.Context, version int) (bool, error) {
+	var exists bool
+	err := db.Pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)`, version,
+	).Scan(&exists)
+	return exists, err
+}
+
+// applyMigration runs one migration and records it in the same transaction, so
+// a partially applied migration can never be marked as done.
+func (db *DB) applyMigration(ctx context.Context, version int, body string) error {
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, body); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES ($1)`, version); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (db *DB) CreateTest(ctx context.Context, t *model.Test) error {

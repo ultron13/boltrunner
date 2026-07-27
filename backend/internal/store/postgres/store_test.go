@@ -353,3 +353,45 @@ func TestLatestSnapshotNotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestMigrationVersionParsesLeadingInteger(t *testing.T) {
+	got, err := migrationVersion("0003_projects.sql")
+	if err != nil {
+		t.Fatalf("migrationVersion: %v", err)
+	}
+	if got != 3 {
+		t.Fatalf("expected 3, got %d", got)
+	}
+	if _, err := migrationVersion("nonsense.sql"); err == nil {
+		t.Fatal("expected an error for a filename with no version prefix")
+	}
+	if _, err := migrationVersion("abcd_x.sql"); err == nil {
+		t.Fatal("expected an error for a non-numeric version prefix")
+	}
+}
+
+func TestMigrateRecordsVersionsAndIsIdempotent(t *testing.T) {
+	db := setupDB(t) // setupDB already calls Migrate once
+	ctx := context.Background()
+
+	var count int
+	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
+		t.Fatalf("count schema_migrations: %v", err)
+	}
+	if count < 2 {
+		t.Fatalf("expected the existing migrations to be recorded, got %d", count)
+	}
+
+	// A second Migrate must skip everything already applied rather than
+	// re-running it.
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("second Migrate: %v", err)
+	}
+	var after int
+	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&after); err != nil {
+		t.Fatalf("recount schema_migrations: %v", err)
+	}
+	if after != count {
+		t.Fatalf("expected the count to stay %d, got %d", count, after)
+	}
+}
