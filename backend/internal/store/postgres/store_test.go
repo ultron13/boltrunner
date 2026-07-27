@@ -421,23 +421,29 @@ func newScratchDB(t *testing.T, maxVersion int) *DB {
 		t.Fatalf("CREATE DATABASE: %v", err)
 	}
 
-	scratchDSN, err := replaceDBName(dsn, name)
-	if err != nil {
-		t.Fatalf("replaceDBName: %v", err)
-	}
-	db, err := Connect(ctx, scratchDSN)
-	if err != nil {
-		t.Fatalf("Connect (scratch): %v", err)
-	}
+	// Registered before anything else can fail, so a later t.Fatalf cannot
+	// strand the database we just created on a shared Postgres instance.
+	var db *DB
 	t.Cleanup(func() {
-		db.Close()
-		cleanup, err := Connect(ctx, dsn)
+		if db != nil {
+			db.Close()
+		}
+		cleanup, err := Connect(context.Background(), dsn)
 		if err != nil {
 			return
 		}
 		defer cleanup.Close()
-		cleanup.Pool.Exec(ctx, `DROP DATABASE IF EXISTS `+name)
+		cleanup.Pool.Exec(context.Background(), `DROP DATABASE IF EXISTS `+name)
 	})
+
+	scratchDSN, err := replaceDBName(dsn, name)
+	if err != nil {
+		t.Fatalf("replaceDBName: %v", err)
+	}
+	db, err = Connect(ctx, scratchDSN)
+	if err != nil {
+		t.Fatalf("Connect (scratch): %v", err)
+	}
 
 	// Apply only the migrations at or below maxVersion, simulating a
 	// deployment that predates the newer ones.

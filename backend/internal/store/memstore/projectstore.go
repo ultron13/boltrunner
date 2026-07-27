@@ -9,10 +9,11 @@ import (
 	"github.com/boltrunner/backend/internal/model"
 )
 
-// DefaultProjectID is the id of the seeded "Default" project. memstore has no
-// migrations to seed it with a generated UUID, so both stores agree on a fixed
-// well-known value instead -- that keeps NewTestStore() argument-free while
-// still letting CreateTest fill in a project.
+// DefaultProjectID identifies memstore's seeded "Default" project. memstore has
+// no migrations, so it uses a fixed id while postgres generates one -- the two
+// backends agree on the contract that an empty ProjectID resolves to the
+// Default project, NOT on the literal id value, which is never portable
+// between them.
 const (
 	DefaultProjectID   = "00000000-0000-0000-0000-000000000001"
 	DefaultProjectName = "Default"
