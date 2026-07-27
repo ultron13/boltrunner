@@ -532,6 +532,15 @@ func TestUpdateTestCreatesNewVersionAndPinsOldRuns(t *testing.T) {
 	if edit.Version != 2 || edit.ID != v1.ID {
 		t.Fatalf("expected v2 under the same catalog id, got v%d/%q", edit.Version, edit.ID)
 	}
+	// UpdateTest must populate the struct it was handed, not just the row: this
+	// is the value a handler serializes straight into its response, so a zeroed
+	// or version-local CreatedAt would ship as the test's creation date.
+	if !edit.CreatedAt.Equal(v1.CreatedAt) {
+		t.Fatalf("expected UpdateTest to report the family's CreatedAt %v, got %v", v1.CreatedAt, edit.CreatedAt)
+	}
+	if !edit.UpdatedAt.After(edit.CreatedAt) {
+		t.Fatalf("expected UpdatedAt (%v) to be after CreatedAt (%v)", edit.UpdatedAt, edit.CreatedAt)
+	}
 
 	latest, err := db.GetTest(ctx, v1.ID)
 	if err != nil || latest.Version != 2 || latest.TargetURL != "http://b" {
