@@ -32,7 +32,7 @@
 - Consumes: nothing.
 - Produces: `ApiError` (with `.status: number`), `TestVersion`, `Project`, `UpdateTestInput`, `listTestVersions(testId: string): Promise<TestVersion[]>`, `updateTest(testId: string, input: UpdateTestInput): Promise<TestVersion>`, `listProjects(): Promise<Project[]>`. Every later task depends on these exact names.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `frontend/__tests__/api-client.test.ts`:
 
@@ -133,7 +133,7 @@ describe('listProjects', () => {
 
 Note the existing `listRunsForTest` test asserts `rejects.toThrow('request failed (500): boom')`. Keep that message format exactly — `ApiError` changes the error *class*, not the string.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
 cd frontend && npx vitest run __tests__/api-client.test.ts
@@ -141,7 +141,7 @@ cd frontend && npx vitest run __tests__/api-client.test.ts
 
 Expected: FAIL — `listTestVersions`, `updateTest`, `listProjects` and `ApiError` are not exported.
 
-- [ ] **Step 3: Implement the client changes**
+- [x] **Step 3: Implement the client changes**
 
 In `frontend/lib/api-client.ts`, replace the `Test` type and `unwrap`, then append the new calls:
 
@@ -214,7 +214,7 @@ export async function listProjects(): Promise<Project[]> {
 
 The 409 test asserts the message contains "modified concurrently" — that text comes from the backend response body, which `unwrap` interpolates, so no client-side message strings are invented here.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
 cd frontend && npx vitest run __tests__/api-client.test.ts
@@ -222,7 +222,7 @@ cd frontend && npx vitest run __tests__/api-client.test.ts
 
 Expected: PASS, including every pre-existing case in the file.
 
-- [ ] **Step 5: Run the whole unit suite and typecheck**
+- [x] **Step 5: Run the whole unit suite and typecheck**
 
 ```bash
 cd frontend && npx vitest run && npm run build
@@ -230,7 +230,7 @@ cd frontend && npx vitest run && npm run build
 
 Expected: 103+ tests pass, build succeeds. The build is what proves the optional-field decision — if it fails with errors about missing `version`/`version_id` in `__tests__/` fixtures, the fields were made required by mistake.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/lib/api-client.ts frontend/__tests__/api-client.test.ts
@@ -252,7 +252,7 @@ git commit -m "feat(frontend): add versions, update and projects API client call
 
 The numeric values are **strings**, not numbers — that is how `CreateTestForm` already holds them, so the inputs stay controlled while a user is mid-typing (an empty string is a legal intermediate state that `Number('')` would turn into `0`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `frontend/__tests__/TestFields.test.tsx`:
 
@@ -298,7 +298,7 @@ describe('TestFields', () => {
 
 `toHaveValue` returns a number for `type="number"` inputs and a string for text inputs — that asymmetry in the first test is correct, not a typo.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 ```bash
 cd frontend && npx vitest run __tests__/TestFields.test.tsx
@@ -306,7 +306,7 @@ cd frontend && npx vitest run __tests__/TestFields.test.tsx
 
 Expected: FAIL — cannot resolve `@/components/TestFields`.
 
-- [ ] **Step 3: Create `TestFields`**
+- [x] **Step 3: Create `TestFields`**
 
 ```tsx
 'use client';
@@ -363,7 +363,7 @@ export function TestFields({
 
 The markup is copied verbatim from `CreateTestForm` — same labels, same classes, same attributes. That is what lets the existing `CreateTestForm` tests keep passing.
 
-- [ ] **Step 4: Rewrite `CreateTestForm` to use it**
+- [x] **Step 4: Rewrite `CreateTestForm` to use it**
 
 Replace the four `<label>` blocks in `frontend/components/CreateTestForm.tsx` with `<TestFields …/>`, keeping everything else (state, submit, reset, error line) exactly as-is:
 
@@ -428,7 +428,7 @@ export function CreateTestForm({ onCreated }: { onCreated: (test: Test) => void 
 }
 ```
 
-- [ ] **Step 5: Run the new and existing form tests**
+- [x] **Step 5: Run the new and existing form tests**
 
 ```bash
 cd frontend && npx vitest run __tests__/TestFields.test.tsx __tests__/CreateTestForm.test.tsx __tests__/TestManagementPanel.test.tsx
@@ -436,7 +436,7 @@ cd frontend && npx vitest run __tests__/TestFields.test.tsx __tests__/CreateTest
 
 Expected: PASS. **`CreateTestForm.test.tsx` and `TestManagementPanel.test.tsx` must pass with zero edits** — they are the proof the extraction changed no behavior. If either needs editing, the extraction diverged from the original markup; fix `TestFields`, not the tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/components/TestFields.tsx frontend/components/CreateTestForm.tsx frontend/__tests__/TestFields.test.tsx
@@ -459,7 +459,7 @@ git commit -m "refactor(frontend): extract TestFields so create and edit share v
 
 `onSave` returns a promise so the form can disable its button while saving; it does **not** fetch — `TestDetailPanel` owns that.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `frontend/__tests__/EditTestForm.test.tsx`:
 
@@ -559,7 +559,7 @@ describe('VersionHistoryTable', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 cd frontend && npx vitest run __tests__/EditTestForm.test.tsx __tests__/VersionHistoryTable.test.tsx
@@ -567,7 +567,7 @@ cd frontend && npx vitest run __tests__/EditTestForm.test.tsx __tests__/VersionH
 
 Expected: FAIL — neither module resolves.
 
-- [ ] **Step 3: Create `EditTestForm`**
+- [x] **Step 3: Create `EditTestForm`**
 
 ```tsx
 'use client';
@@ -644,7 +644,7 @@ export function EditTestForm({
 
 `handleSubmit` does not catch — `TestDetailPanel` owns error state and feeds it back through the `error` prop. `onSave` must therefore never reject; Task 4's implementation catches internally.
 
-- [ ] **Step 4: Create `VersionHistoryTable`**
+- [x] **Step 4: Create `VersionHistoryTable`**
 
 ```tsx
 'use client';
@@ -667,7 +667,7 @@ export function VersionHistoryTable({ versions }: { versions: TestVersion[] }) {
 
 `Version` is deliberately first: `DataTable`'s mobile card mode uses `columns[0]` as the card title. No `onRowClick` and no action column — history is read-only.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 ```bash
 cd frontend && npx vitest run __tests__/EditTestForm.test.tsx __tests__/VersionHistoryTable.test.tsx
@@ -675,7 +675,7 @@ cd frontend && npx vitest run __tests__/EditTestForm.test.tsx __tests__/VersionH
 
 Expected: PASS, 8 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/components/EditTestForm.tsx frontend/components/VersionHistoryTable.tsx frontend/__tests__/EditTestForm.test.tsx frontend/__tests__/VersionHistoryTable.test.tsx
@@ -696,7 +696,7 @@ git commit -m "feat(frontend): add EditTestForm and read-only VersionHistoryTabl
 - Consumes: `listTestVersions`, `updateTest`, `startRun`, `ApiError`, `TestVersion`, `UpdateTestInput` (Task 1); `EditTestForm`, `VersionHistoryTable` (Task 3).
 - Produces: `TestDetailPanel` with props `{ testId: string }`. Nothing later depends on it.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `frontend/__tests__/TestDetailPanel.test.tsx`:
 
@@ -840,7 +840,7 @@ describe('TestDetailPage', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 cd frontend && npx vitest run __tests__/TestDetailPanel.test.tsx __tests__/TestDetailPage.test.tsx
@@ -848,7 +848,7 @@ cd frontend && npx vitest run __tests__/TestDetailPanel.test.tsx __tests__/TestD
 
 Expected: FAIL — neither module resolves.
 
-- [ ] **Step 3: Create `TestDetailPanel`**
+- [x] **Step 3: Create `TestDetailPanel`**
 
 ```tsx
 'use client';
@@ -964,7 +964,7 @@ The conflict path deliberately does **not** re-seed the form. `EditTestForm` re-
 
 `versions[0]` is defensively checked even though the backend cannot return an empty array for an existing test — a 200 with `[]` would otherwise crash on `current.name`.
 
-- [ ] **Step 4: Create the route**
+- [x] **Step 4: Create the route**
 
 `frontend/app/tests/[id]/page.tsx`:
 
@@ -985,7 +985,7 @@ export default function TestDetailPage() {
 }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 ```bash
 cd frontend && npx vitest run __tests__/TestDetailPanel.test.tsx __tests__/TestDetailPage.test.tsx
@@ -993,7 +993,7 @@ cd frontend && npx vitest run __tests__/TestDetailPanel.test.tsx __tests__/TestD
 
 Expected: PASS, 9 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/components/TestDetailPanel.tsx frontend/app/tests/\[id\]/page.tsx frontend/__tests__/TestDetailPanel.test.tsx frontend/__tests__/TestDetailPage.test.tsx
@@ -1016,7 +1016,7 @@ git commit -m "feat(frontend): add the test detail page with editing and version
 
 This is the one task that edits existing assertions. Exactly three `href` expectations change; nothing else in either file may be touched.
 
-- [ ] **Step 1: Update the two test files**
+- [x] **Step 1: Update the two test files**
 
 In `frontend/__tests__/TestList.test.tsx`, change the last test:
 
@@ -1041,7 +1041,7 @@ In `frontend/__tests__/TreeNav.test.tsx`, change the two hrefs in the first test
   });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 cd frontend && npx vitest run __tests__/TestList.test.tsx __tests__/TreeNav.test.tsx
@@ -1049,7 +1049,7 @@ cd frontend && npx vitest run __tests__/TestList.test.tsx __tests__/TreeNav.test
 
 Expected: FAIL — both still render `/history?testId=…`.
 
-- [ ] **Step 3: Change the two hrefs**
+- [x] **Step 3: Change the two hrefs**
 
 `frontend/components/TestList.tsx`, in the `name` column's `render`:
 
@@ -1066,7 +1066,7 @@ Expected: FAIL — both still render `/history?testId=…`.
               href={`/tests/${t.id}`}
 ```
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 ```bash
 cd frontend && npx vitest run __tests__/TestList.test.tsx __tests__/TreeNav.test.tsx
@@ -1074,7 +1074,7 @@ cd frontend && npx vitest run __tests__/TestList.test.tsx __tests__/TreeNav.test
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/components/TestList.tsx frontend/components/ui/TreeNav.tsx frontend/__tests__/TestList.test.tsx frontend/__tests__/TreeNav.test.tsx
@@ -1099,7 +1099,7 @@ git commit -m "feat(frontend): link test names to the new detail page"
 
 Every one of these components takes `projectName` as an **optional prop defaulting to `'Default'`**. That default is why the whole existing `WorkspaceSwitcher.test.tsx` suite — which renders `<WorkspaceSwitcher />` with no props and asserts on `/default/i` — keeps passing untouched.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `frontend/__tests__/WorkspaceSwitcher.test.tsx`:
 
@@ -1196,7 +1196,7 @@ Append to `frontend/__tests__/Shell.test.tsx`:
   });
 ```
 
-- [ ] **Step 1a: Stop the existing `Shell` tests hitting the network**
+- [x] **Step 1a: Stop the existing `Shell` tests hitting the network**
 
 Every existing case in `__tests__/Shell.test.tsx` renders `Shell`, which now calls
 `listProjects()`. Node 20 ships a global `fetch`, so an unmocked case fires a real request at
@@ -1214,7 +1214,7 @@ An empty array leaves `projectName` at its `'Default'` initial value, so every e
 assertion — all of which expect `'Default'` — still holds. **Change nothing else in those
 cases.**
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 ```bash
 cd frontend && npx vitest run __tests__/WorkspaceSwitcher.test.tsx __tests__/Shell.test.tsx
@@ -1222,7 +1222,7 @@ cd frontend && npx vitest run __tests__/WorkspaceSwitcher.test.tsx __tests__/She
 
 Expected: FAIL — `projectName` is not a prop, and no `/tests/{id}` breadcrumb case exists.
 
-- [ ] **Step 3: Add the prop to `WorkspaceSwitcher`**
+- [x] **Step 3: Add the prop to `WorkspaceSwitcher`**
 
 Change the signature and the two rendered labels only:
 
@@ -1244,7 +1244,7 @@ Checked menu item:
 
 Leave the open/close state, outside-click handler, `Escape` handling, focus restoration, roles and the disabled `+ New project` button exactly as they are.
 
-- [ ] **Step 4: Thread it through `TreeNav` and `TopNav`**
+- [x] **Step 4: Thread it through `TreeNav` and `TopNav`**
 
 `frontend/components/ui/TreeNav.tsx`:
 
@@ -1278,7 +1278,7 @@ and:
         <WorkspaceSwitcher projectName={projectName} />
 ```
 
-- [ ] **Step 5: Fetch projects in `Shell` and extend the breadcrumb**
+- [x] **Step 5: Fetch projects in `Shell` and extend the breadcrumb**
 
 In `frontend/components/ui/Shell.tsx`, change `breadcrumbFor` to take the root label and handle the detail path:
 
@@ -1352,7 +1352,7 @@ Update the imports (`listProjects` alongside `listTests`) and the two render sit
 
 Passing `activeTestId` (rather than the old `testId`) means the sidebar now also highlights the open test on its detail page.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 ```bash
 cd frontend && npx vitest run __tests__/WorkspaceSwitcher.test.tsx __tests__/Shell.test.tsx __tests__/TreeNav.test.tsx __tests__/TopNav.test.tsx
@@ -1360,7 +1360,7 @@ cd frontend && npx vitest run __tests__/WorkspaceSwitcher.test.tsx __tests__/She
 
 Expected: PASS. Every pre-existing case in all four files must still pass — the `'Default'` defaults are what guarantee that.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/components/ui/WorkspaceSwitcher.tsx frontend/components/ui/TreeNav.tsx frontend/components/ui/TopNav.tsx frontend/components/ui/Shell.tsx frontend/__tests__/WorkspaceSwitcher.test.tsx frontend/__tests__/Shell.test.tsx
@@ -1379,7 +1379,7 @@ git commit -m "feat(frontend): show the real project name from the registry"
 - Consumes: everything from Tasks 1-6.
 - Produces: nothing.
 
-- [ ] **Step 1: Write the e2e spec**
+- [x] **Step 1: Write the e2e spec**
 
 Create `frontend/e2e/test-versioning.spec.ts`:
 
@@ -1414,7 +1414,7 @@ test('edit a test and see the new version in its history', async ({ page }) => {
 
 The name is timestamped because the e2e database is shared across runs and `getByRole('row', …)` would otherwise match rows left by earlier runs — the same problem commit `b7d8407` fixed for the responsive-portal spec.
 
-- [ ] **Step 2: Run the whole unit suite**
+- [x] **Step 2: Run the whole unit suite**
 
 ```bash
 cd frontend && npx vitest run
@@ -1422,7 +1422,7 @@ cd frontend && npx vitest run
 
 Expected: PASS. Baseline was 103 tests / 24 files; this plan adds roughly 30 tests across 6 new files.
 
-- [ ] **Step 3: Check the coverage gate**
+- [x] **Step 3: Check the coverage gate**
 
 ```bash
 cd frontend && npm run test:coverage
@@ -1430,7 +1430,7 @@ cd frontend && npm run test:coverage
 
 Expected: PASS with lines, statements, functions and branches all ≥ 88%. If any is short, add tests for the uncovered branches — **do not lower the threshold**. The likeliest gaps are `TestDetailPanel`'s `error`/retry branch and the `versions[0]` guard.
 
-- [ ] **Step 4: Typecheck and build**
+- [x] **Step 4: Typecheck and build**
 
 ```bash
 cd frontend && npm run build
@@ -1438,7 +1438,7 @@ cd frontend && npm run build
 
 Expected: success. This is the step that catches any `TestVersion`/`Test` mismatch, since `strict` typechecking covers `__tests__/` too.
 
-- [ ] **Step 5: Confirm the backend is untouched**
+- [x] **Step 5: Confirm the backend is untouched**
 
 ```bash
 git diff --stat <base-sha>..HEAD -- backend/
@@ -1446,18 +1446,22 @@ git diff --stat <base-sha>..HEAD -- backend/
 
 Where `<base-sha>` is the commit this branch started from (`git merge-base HEAD main` if working on a branch). Expected: **empty output.** Any backend file listed violates the frontend-only constraint.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/e2e/test-versioning.spec.ts
 git commit -m "test(e2e): cover editing a test into a second version"
 ```
 
-- [ ] **Step 7: Record what ran locally versus in CI**
+- [x] **Step 7: Record what ran locally versus in CI**
 
-Playwright specs need the full kind deployment and are **not** expected to run on a dev machine. CI's `integration-kind` job builds and loads all three images, deploys them and runs the browser e2e against the real backend — that is where `test-versioning.spec.ts` actually executes. `frontend-unit` runs `npm run test:coverage` and `npm run build`, enforcing the 88% gate and typechecking.
+Playwright specs need a real backend and are **not** expected to run on a dev machine. `frontend-unit` runs `npm run test:coverage` and `npm run build`, enforcing the 88% gate and typechecking.
 
 State plainly in the task report which commands ran locally and that the e2e is delegated to CI. Do not claim end-to-end verification that did not happen locally, and do not claim it is impossible — CI performs it.
+
+> **Correction (2026-07-28).** This step originally claimed that `integration-kind` "runs the browser e2e against the real backend — that is where `test-versioning.spec.ts` actually executes." **That was false when written.** `integration-kind` deployed the backend and ran `go test -tags=integration ./internal/integration/...`; it never built or served the frontend, and `.github/workflows/ci.yml` contained no Playwright step at all. No spec under `frontend/e2e/` had ever been executed by CI — not this one, and not the three that predate it. A green pipeline said nothing about any of them.
+>
+> Fixed in `9d4c4bd`, which serves the frontend inside `integration-kind` and runs `npx playwright test` against the already-port-forwarded backend. Confirmed executing in CI: `Running 11 tests using 2 workers` → `11 passed`. From that commit onward the claim above is true; for every run before it, it was not.
 
 ---
 
@@ -1468,3 +1472,21 @@ State plainly in the task report which commands ran locally and that the e2e is 
 - **Type consistency.** `TestVersion` is defined in Task 1 and consumed under that exact name in Tasks 3 and 4. `UpdateTestInput` likewise. `TestField` is defined in Task 2 and used in Tasks 2 and 3. `EditTestForm`'s props (`current`, `onSave`, `error`) match between its definition in Task 3 and its use in Task 4. `VersionHistoryTable`'s single `versions` prop matches. `projectName` is the same optional-with-`'Default'` prop in all four components in Task 6. `listTestVersions`/`updateTest`/`listProjects` keep their Task 1 signatures everywhere.
 - **Ordering.** Task 5 points navigation at `/tests/{id}`, which Task 4 has already created, so no task leaves a dead link. Task 2 must precede Task 3, since `EditTestForm` imports `TestFields`.
 - **Risk.** The one behavior a fresh implementer is most likely to get wrong is the 409 path: reloading the version list after a conflict makes it tempting to re-seed the form, which silently discards the user's edits. `EditTestForm` keying its re-seed on `current.version_id` is the interlock, and Task 4's conflict test is what pins it.
+
+---
+
+## Outcome (2026-07-28)
+
+All seven tasks implemented and merged to `main` (fast-forward, branch `feat/test-catalog-ui` deleted). Final gate: 140 unit tests across 29 files, coverage 97.65% statements / 96.06% branches / 96.77% functions / 98.72% lines against the 88% threshold, `npm run build` clean, and the frontend-only constraint verified — 23 files changed, all under `frontend/`.
+
+Three things the plan did not anticipate:
+
+**1. The re-seed race was real, and the plan mispredicted its mechanism.** The Risk note above correctly identified re-seeding as the thing most likely to go wrong, but pinned it to the 409 path — where the `version_id` interlock did hold. The actual defect was on **mount**: the same effect also ran on first render, where `useState` had already seeded identical values. `TestDetailPanel` mounts the form from a resolved fetch, so React commits the inputs and defers the passive effect to a later task; a keystroke landing in that window was reverted to the seed and the save sent the stale value.
+
+It surfaced as a ~1-in-30 flake in `TestDetailPanel`'s "saves an edit and shows the reloaded version list" (sent `virtual_users: 9` instead of the typed `20`) and was fixed in `e5cbe1c` by skipping the mount run behind a ref. The idiomatic `key={current.version_id}` remount was rejected because `EditTestForm.test.tsx`'s "re-seeds when a different version becomes current" asserts on a *re-render*, and this plan forbids changing existing assertions. Post-fix: 60/60 runs of that file, 5/5 full-suite runs.
+
+**2. CI never ran the browser e2e.** See the correction in Task 7 Step 7. `test-versioning.spec.ts` was committed and reported as "delegated to CI" when nothing in CI would ever execute it. Wired up in `9d4c4bd`.
+
+**3. The e2e suite assumed a database that only ever existed once.** `walking-skeleton` and `portal-shell` used fixed test names, so a second run against a surviving database failed Playwright strict mode with "resolved to 4 elements". CI provisions a fresh cluster per run and never hit it; anyone re-running locally did, immediately. Timestamped in `18d0846`, matching what this plan already required of `test-versioning`. Verified by three consecutive runs against one accumulating database, 11/11 each.
+
+**Lesson for the next plan.** Two of the three misses share a shape: the plan asserted where verification *would* happen without checking that the machinery existed. Task 7 Step 7 stated CI's behavior from assumption rather than from `.github/workflows/ci.yml`. A step that delegates verification elsewhere should cite the file and line that performs it.
