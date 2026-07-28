@@ -10,7 +10,7 @@ export function TestList({ tests, onStart }: { tests: Test[]; onStart: (testId: 
       key: 'name',
       header: 'Name',
       render: (t) => (
-        <Link href={`/history?testId=${t.id}`} className="text-accent hover:underline">
+        <Link href={`/tests/${t.id}`} className="text-accent hover:underline">
           {t.name}
         </Link>
       ),

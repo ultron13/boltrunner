@@ -25,11 +25,11 @@ describe('TestList', () => {
     expect(onStart).toHaveBeenCalledWith('1');
   });
 
-  it('links the test name to its filtered history page', () => {
+  it('links the test name to its detail page', () => {
     render(<TestList tests={tests} onStart={() => {}} />);
     expect(within(screen.getByRole('table')).getByRole('link', { name: 'Checkout Load' })).toHaveAttribute(
       'href',
-      '/history?testId=1'
+      '/tests/1'
     );
   });
 });

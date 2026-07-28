@@ -9,7 +9,7 @@ export function TreeNav({ tests, activeTestId }: { tests: Test[]; activeTestId?:
         {tests.map((t) => (
           <li key={t.id}>
             <Link
-              href={`/history?testId=${t.id}`}
+              href={`/tests/${t.id}`}
               className={`block px-6 py-1 truncate ${
                 t.id === activeTestId ? 'bg-accent/10 border-l-2 border-accent text-accent' : 'text-text'
               }`}

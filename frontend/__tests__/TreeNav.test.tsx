@@ -11,8 +11,8 @@ describe('TreeNav', () => {
   it('renders the Default workspace and every test as a link', () => {
     render(<TreeNav tests={tests} />);
     expect(screen.getByText(/Default/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Checkout Load/i })).toHaveAttribute('href', '/history?testId=1');
-    expect(screen.getByRole('link', { name: /Search Spike/i })).toHaveAttribute('href', '/history?testId=2');
+    expect(screen.getByRole('link', { name: /Checkout Load/i })).toHaveAttribute('href', '/tests/1');
+    expect(screen.getByRole('link', { name: /Search Spike/i })).toHaveAttribute('href', '/tests/2');
   });
 
   it('highlights the active test', () => {
