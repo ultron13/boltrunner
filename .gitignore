@@ -1,3 +1,6 @@
 .playwright-mcp/
 .DS_Store
 .superpowers/
+
+# Vitest writes its cache here when run from the repo root instead of frontend/
+node_modules/
