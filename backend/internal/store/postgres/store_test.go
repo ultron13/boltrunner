@@ -752,6 +752,63 @@ func TestCreateTestDefaultsToDefaultProject(t *testing.T) {
 	}
 }
 
+func TestCreateTestUnknownProjectIDIsInvalidReference(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{
+		Name: "pg-unknown-project", TargetURL: "http://example.com",
+		VirtualUsers: 1, DurationSeconds: 1,
+		ProjectID: "00000000-0000-0000-0000-000000000099", // well-formed UUID, no such project
+	}
+	err := db.CreateTest(ctx, tst)
+	if !errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("expected ErrInvalidReference, got %v", err)
+	}
+}
+
+func TestCreateTestMalformedProjectIDIsInvalidReference(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	tst := &model.Test{
+		Name: "pg-malformed-project", TargetURL: "http://example.com",
+		VirtualUsers: 1, DurationSeconds: 1,
+		ProjectID: "not-a-uuid",
+	}
+	if err := db.CreateTest(ctx, tst); !errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("expected ErrInvalidReference, got %v", err)
+	}
+}
+
+// An infrastructure failure must not be reported as a client error just because
+// the caller happened to supply a project_id. This pins the distinction that
+// makes handleCreateTest's 400-vs-500 split trustworthy: a cancelled context is
+// the server's problem, not the request's.
+func TestCreateTestInfrastructureFailureIsNotInvalidReference(t *testing.T) {
+	db := setupDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	projects, err := db.ListProjects(context.Background())
+	if err != nil || len(projects) == 0 {
+		t.Fatalf("need at least the Default project to build a valid request: %v", err)
+	}
+
+	tst := &model.Test{
+		Name: "pg-cancelled", TargetURL: "http://example.com",
+		VirtualUsers: 1, DurationSeconds: 1,
+		ProjectID: projects[0].ID, // a real, well-formed project
+	}
+	err = db.CreateTest(ctx, tst)
+	if err == nil {
+		t.Fatal("expected an error from a cancelled context")
+	}
+	if errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("a cancelled context must not be reported as an invalid reference, got %v", err)
+	}
+}
+
 func TestMigrateBackfillsProjectIDForLegacyRows(t *testing.T) {
 	ctx := context.Background()
 	db := newScratchDB(t, 2) // a database as it looked before 0003

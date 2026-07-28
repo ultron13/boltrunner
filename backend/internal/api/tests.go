@@ -45,7 +45,12 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		VirtualUsers:    req.VirtualUsers,
 		DurationSeconds: req.DurationSeconds,
 	}
-	if err := s.testStore.CreateTest(r.Context(), t); err != nil {
+	err := s.testStore.CreateTest(r.Context(), t)
+	switch {
+	case errors.Is(err, store.ErrInvalidReference):
+		http.Error(w, "unknown project_id", http.StatusBadRequest)
+		return
+	case err != nil:
 		http.Error(w, "failed to create test", http.StatusInternalServerError)
 		return
 	}

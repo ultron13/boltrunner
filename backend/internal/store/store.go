@@ -12,6 +12,8 @@ var (
 	// ErrConflict means a concurrent edit already claimed the version number
 	// this update tried to write.
 	ErrConflict = errors.New("conflict")
+	// ErrInvalidReference means a referenced entity does not exist.
+	ErrInvalidReference = errors.New("invalid reference")
 )
 
 type TestStore interface {

@@ -29,6 +29,12 @@ func (s *TestStore) CreateTest(ctx context.Context, t *model.Test) error {
 	defer s.mu.Unlock()
 	if t.ProjectID == "" {
 		t.ProjectID = DefaultProjectID
+	} else if t.ProjectID != DefaultProjectID {
+		// memstore has no project registry beyond the seeded Default, so no
+		// other id is resolvable here. postgres enforces the same contract via
+		// the tests.project_id foreign key, so both backends reject an unknown
+		// project rather than one silently storing it.
+		return store.ErrInvalidReference
 	}
 	now := time.Now().UTC()
 	t.ID = uuid.NewString()

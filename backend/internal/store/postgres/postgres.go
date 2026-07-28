@@ -169,17 +169,44 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+// isForeignKeyViolation reports whether err is SQLSTATE 23503
+// (foreign_key_violation) -- here, a project_id that names no row in
+// projects.
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+}
+
 func (db *DB) CreateTest(ctx context.Context, t *model.Test) error {
+	// Reject a malformed project_id up front. pgx would fail to encode it
+	// client-side, producing an error indistinguishable by type from a genuine
+	// connection or cancellation failure -- so inferring "bad input" from the
+	// error type would report outages as client errors. Checking the format
+	// explicitly keeps that distinction honest: everything that still fails
+	// below is a real server-side problem.
+	if t.ProjectID != "" {
+		if _, perr := uuid.Parse(t.ProjectID); perr != nil {
+			return store.ErrInvalidReference
+		}
+	}
 	// The id is generated here so the row can reference it as its own
 	// catalog_id in a single INSERT.
 	id := uuid.NewString()
-	return db.Pool.QueryRow(ctx,
+	err := db.Pool.QueryRow(ctx,
 		`INSERT INTO tests (id, catalog_id, version, name, target_url, virtual_users, duration_seconds, project_id)
 		 VALUES ($1, $1, 1, $2, $3, $4, $5,
 		         COALESCE($6, (SELECT id FROM projects WHERE name = 'Default')))
 		 RETURNING catalog_id, id, version, project_id, created_at, created_at`,
 		id, t.Name, t.TargetURL, t.VirtualUsers, t.DurationSeconds, nullableUUID(t.ProjectID),
 	).Scan(&t.ID, &t.VersionID, &t.Version, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt)
+	if err == nil {
+		return nil
+	}
+	// A well-formed id that names no project row: the foreign key catches it.
+	if isForeignKeyViolation(err) {
+		return store.ErrInvalidReference
+	}
+	return err
 }
 
 func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {

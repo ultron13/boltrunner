@@ -65,13 +65,39 @@ func TestCreateTestHonoursExplicitProject(t *testing.T) {
 	ctx := context.Background()
 	ts := NewTestStore()
 
-	const other = "11111111-1111-1111-1111-111111111111"
-	in := &model.Test{ProjectID: other, Name: "explicit", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
+	in := &model.Test{ProjectID: DefaultProjectID, Name: "explicit", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
 	if err := ts.CreateTest(ctx, in); err != nil {
 		t.Fatalf("CreateTest: %v", err)
 	}
-	if in.ProjectID != other {
+	if in.ProjectID != DefaultProjectID {
 		t.Fatalf("expected the explicit project id to be preserved, got %q", in.ProjectID)
+	}
+}
+
+// An unknown project must be rejected rather than stored, so that ListTests can
+// never report a project_id that ListProjects does not list. postgres enforces
+// this with the tests.project_id foreign key; memstore knows only Default, so
+// it rejects everything else. This test originally asserted the opposite --
+// that any explicit id was preserved -- which was written before the invalid-
+// reference contract existed.
+func TestCreateTestRejectsUnknownProject(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestStore()
+
+	in := &model.Test{
+		ProjectID: "11111111-1111-1111-1111-111111111111",
+		Name:      "orphan", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1,
+	}
+	if err := ts.CreateTest(ctx, in); !errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("expected ErrInvalidReference, got %v", err)
+	}
+
+	all, err := ts.ListTests(ctx)
+	if err != nil {
+		t.Fatalf("ListTests: %v", err)
+	}
+	if len(all) != 0 {
+		t.Fatalf("expected the rejected test not to be stored, got %d", len(all))
 	}
 }
 

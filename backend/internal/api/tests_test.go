@@ -208,3 +208,27 @@ func TestCreatedTestBelongsToTheDefaultProject(t *testing.T) {
 		t.Fatal("expected a version_id")
 	}
 }
+
+// An unknown project_id is a client mistake, not a server fault: it must not
+// surface as a 500. Both stores reject it -- postgres via the
+// tests.project_id foreign key, memstore because Default is the only project
+// it knows -- so the handler can map it to 400 uniformly.
+func TestCreateTestWithUnknownProjectIsRejected(t *testing.T) {
+	s := newTestServer()
+
+	body, _ := json.Marshal(map[string]any{
+		"name": "orphan", "target_url": "http://example.com",
+		"virtual_users": 1, "duration_seconds": 1,
+		"project_id": "99999999-9999-9999-9999-999999999999",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/tests", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusInternalServerError {
+		t.Fatalf("an unknown project_id must not surface as a 500: %s", rec.Body.String())
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
