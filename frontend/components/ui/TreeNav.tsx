@@ -1,10 +1,18 @@
 import Link from 'next/link';
 import { Test } from '@/lib/api-client';
 
-export function TreeNav({ tests, activeTestId }: { tests: Test[]; activeTestId?: string }) {
+export function TreeNav({
+  tests,
+  activeTestId,
+  projectName = 'Default',
+}: {
+  tests: Test[];
+  activeTestId?: string;
+  projectName?: string;
+}) {
   return (
     <nav aria-label="Workspace" className="bg-surface-alt border-r border-border w-56 shrink-0 text-sm py-2">
-      <div className="px-3 py-1 font-medium text-text">📁 Default</div>
+      <div className="px-3 py-1 font-medium text-text">📁 {projectName}</div>
       <ul>
         {tests.map((t) => (
           <li key={t.id}>

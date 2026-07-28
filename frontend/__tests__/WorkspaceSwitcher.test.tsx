@@ -60,4 +60,16 @@ describe('WorkspaceSwitcher', () => {
     fireEvent.click(screen.getByRole('button', { name: /new project/i }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
   });
+
+  it('renders the project name it is given', () => {
+    render(<WorkspaceSwitcher projectName="Payments" />);
+    expect(screen.getByRole('button', { name: /payments/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /payments/i }));
+    expect(screen.getByRole('menuitemradio', { name: /payments/i })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('falls back to Default when given no project name', () => {
+    render(<WorkspaceSwitcher />);
+    expect(screen.getByRole('button', { name: /default/i })).toBeInTheDocument();
+  });
 });

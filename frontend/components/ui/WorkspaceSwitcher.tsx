@@ -2,7 +2,7 @@
 
 import { KeyboardEvent, useEffect, useRef, useState } from 'react';
 
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({ projectName = 'Default' }: { projectName?: string } = {}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -40,7 +40,7 @@ export function WorkspaceSwitcher() {
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1 text-chrome-fg px-2 py-1 rounded hover:bg-white/10"
       >
-        Default <span aria-hidden="true">▾</span>
+        {projectName} <span aria-hidden="true">▾</span>
       </button>
       {open && (
         <div
@@ -55,7 +55,7 @@ export function WorkspaceSwitcher() {
             onClick={close}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-alt"
           >
-            <span aria-hidden="true">✓</span> Default
+            <span aria-hidden="true">✓</span> {projectName}
           </button>
           <button
             type="button"

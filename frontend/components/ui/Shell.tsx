@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { listTests, Test } from '@/lib/api-client';
+import { listProjects, listTests, Test } from '@/lib/api-client';
 import { TopNav } from '@/components/ui/TopNav';
 import { TreeNav } from '@/components/ui/TreeNav';
 import { BottomTabBar } from '@/components/ui/BottomTabBar';
@@ -15,11 +15,21 @@ const MODULES = [
   { label: 'Admin', href: '/admin' },
 ];
 
-function breadcrumbFor(pathname: string, testId: string | null, testName?: string): BreadcrumbItem[] {
-  const root: BreadcrumbItem = { label: 'Default', href: '/' };
+function breadcrumbFor(
+  pathname: string,
+  testId: string | null,
+  testName: string | undefined,
+  projectName: string
+): BreadcrumbItem[] {
+  const root: BreadcrumbItem = { label: projectName, href: '/' };
   if (pathname === '/') return [root];
   if (pathname === '/admin') return [root, { label: 'Admin' }];
+  // The exact '/tests' match must stay above the '/tests/' prefix match.
   if (pathname === '/tests') return [root, { label: 'Tests' }];
+  if (pathname.startsWith('/tests/')) {
+    const id = pathname.split('/')[2];
+    return [root, { label: 'Tests', href: '/tests' }, { label: testName ?? id }];
+  }
   if (pathname === '/history') {
     return testId
       ? [root, { label: 'Test Runs', href: '/history' }, { label: testName ?? testId }]
@@ -34,6 +44,7 @@ function breadcrumbFor(pathname: string, testId: string | null, testName?: strin
 
 export function Shell({ children }: { children: ReactNode }) {
   const [tests, setTests] = useState<Test[]>([]);
+  const [projectName, setProjectName] = useState('Default');
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const testId = searchParams.get('testId');
@@ -42,15 +53,25 @@ export function Shell({ children }: { children: ReactNode }) {
     listTests().then(setTests).catch(() => setTests([]));
   }, []);
 
-  const activeTest = tests.find((t) => t.id === testId);
-  const crumbs = breadcrumbFor(pathname, testId, activeTest?.name);
+  useEffect(() => {
+    // A projects-endpoint failure degrades to the literal "Default" rather
+    // than an empty switcher.
+    listProjects()
+      .then((projects) => setProjectName(projects[0]?.name ?? 'Default'))
+      .catch(() => {});
+  }, []);
+
+  const detailTestId = pathname.startsWith('/tests/') ? pathname.split('/')[2] : null;
+  const activeTestId = testId ?? detailTestId;
+  const activeTest = tests.find((t) => t.id === activeTestId);
+  const crumbs = breadcrumbFor(pathname, testId, activeTest?.name, projectName);
 
   return (
     <div className="min-h-screen flex flex-col bg-surface-alt text-text">
-      <TopNav modules={MODULES} />
+      <TopNav modules={MODULES} projectName={projectName} />
       <div className="flex flex-1">
         <div className="hidden md:block">
-          <TreeNav tests={tests} activeTestId={testId ?? undefined} />
+          <TreeNav tests={tests} activeTestId={activeTestId ?? undefined} projectName={projectName} />
         </div>
         <div className="flex-1 flex flex-col">
           <Breadcrumb items={crumbs} />

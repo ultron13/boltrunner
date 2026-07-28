@@ -19,6 +19,7 @@ describe('Shell', () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([
       { id: '1', name: 'Checkout Load', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
     ]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
 
     render(
       <ThemeProvider>
@@ -36,6 +37,7 @@ describe('Shell', () => {
 
   it('shows a Default-only breadcrumb on the root path', async () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -48,6 +50,7 @@ describe('Shell', () => {
 
   it('shows a still-usable page when listTests fails', async () => {
     vi.spyOn(api, 'listTests').mockRejectedValue(new Error('boom'));
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -62,6 +65,7 @@ describe('Shell', () => {
   it('shows an Admin breadcrumb on the admin path', async () => {
     vi.mocked(usePathname).mockReturnValue('/admin');
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -76,6 +80,7 @@ describe('Shell', () => {
     vi.mocked(usePathname).mockReturnValue('/history');
     vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -92,6 +97,7 @@ describe('Shell', () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([
       { id: '1', name: 'Checkout Load', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
     ]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -106,6 +112,7 @@ describe('Shell', () => {
     vi.mocked(usePathname).mockReturnValue('/history');
     vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('testId=unknown-id'));
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -120,6 +127,7 @@ describe('Shell', () => {
     vi.mocked(usePathname).mockReturnValue('/runs/r1');
     vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -132,6 +140,7 @@ describe('Shell', () => {
 
   it('renders the bottom tab bar', async () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -144,6 +153,7 @@ describe('Shell', () => {
 
   it('wraps the tree nav so it is hidden below md and shown at md and up', async () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -158,6 +168,7 @@ describe('Shell', () => {
   it('shows a Tests breadcrumb on the tests path', async () => {
     vi.mocked(usePathname).mockReturnValue('/tests');
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
     render(
       <ThemeProvider>
         <Shell>
@@ -166,5 +177,80 @@ describe('Shell', () => {
       </ThemeProvider>
     );
     expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Tests');
+  });
+
+  it('shows the fetched project name in the breadcrumb and tree nav', async () => {
+    vi.mocked(usePathname).mockReturnValue('/');
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([
+      { id: 'p1', name: 'Payments', created_at: '2026-07-24T00:00:00Z' },
+    ]);
+
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>page content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Payments')
+    );
+    expect(screen.getByRole('navigation', { name: 'Workspace' })).toHaveTextContent('Payments');
+  });
+
+  it('keeps showing Default when the projects endpoint fails', async () => {
+    vi.mocked(usePathname).mockReturnValue('/');
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockRejectedValue(new Error('boom'));
+
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>page content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+
+    expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Default');
+  });
+
+  it('shows the test name in the breadcrumb on a test detail path', async () => {
+    vi.mocked(usePathname).mockReturnValue('/tests/1');
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
+    vi.spyOn(api, 'listTests').mockResolvedValue([
+      { id: '1', name: 'Checkout Load', target_url: 'http://x', virtual_users: 5, duration_seconds: 30, created_at: '2026-07-24T00:00:00Z' },
+    ]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
+
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>detail content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Checkout Load')
+    );
+  });
+
+  it('falls back to the raw id in the breadcrumb for an unknown test detail path', async () => {
+    vi.mocked(usePathname).mockReturnValue('/tests/unknown-id');
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([]);
+
+    render(
+      <ThemeProvider>
+        <Shell>
+          <p>detail content</p>
+        </Shell>
+      </ThemeProvider>
+    );
+
+    expect(await screen.findByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('unknown-id');
   });
 });

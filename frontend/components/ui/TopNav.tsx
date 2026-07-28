@@ -7,13 +7,13 @@ import { WorkspaceSwitcher } from '@/components/ui/WorkspaceSwitcher';
 
 export type NavModule = { label: string; href: string };
 
-export function TopNav({ modules }: { modules: NavModule[] }) {
+export function TopNav({ modules, projectName }: { modules: NavModule[]; projectName?: string }) {
   const pathname = usePathname();
   return (
     <header className="bg-chrome text-chrome-fg flex items-center justify-between px-4 py-2 text-sm">
       <div className="flex items-center gap-4">
         <span className="font-semibold">BoltRunner</span>
-        <WorkspaceSwitcher />
+        <WorkspaceSwitcher projectName={projectName} />
         <nav className="hidden md:flex items-center gap-4">
           {modules.map((m) => {
             const active = pathname === m.href;
