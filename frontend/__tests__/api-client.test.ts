@@ -6,6 +6,10 @@ import {
   startRun,
   getRun,
   cancelRun,
+  listTestVersions,
+  updateTest,
+  listProjects,
+  ApiError,
 } from '@/lib/api-client';
 
 describe('listRunsForTest', () => {
@@ -121,5 +125,96 @@ describe('cancelRun', () => {
   it('throws when the API returns an unexpected error status', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 }) as unknown as typeof fetch;
     await expect(cancelRun('r1')).rejects.toThrow('cancel failed (500)');
+  });
+});
+
+describe('ApiError', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('carries the status code and is still an Error', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: async () => 'test was modified concurrently; reload and retry',
+    }) as unknown as typeof fetch;
+
+    await expect(updateTest('t1', { name: 'n', target_url: 'http://x', virtual_users: 1, duration_seconds: 1 }))
+      .rejects.toBeInstanceOf(ApiError);
+
+    try {
+      await updateTest('t1', { name: 'n', target_url: 'http://x', virtual_users: 1, duration_seconds: 1 });
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      expect((err as ApiError).status).toBe(409);
+      expect((err as ApiError).message).toContain('modified concurrently');
+    }
+  });
+});
+
+describe('listTestVersions', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('fetches the versions of a test newest-first', async () => {
+    const versions = [
+      { id: 't1', version_id: 'v2', version: 2, project_id: 'p1', name: 'smoke', target_url: 'http://b', virtual_users: 2, duration_seconds: 2, created_at: '2026-07-24T00:00:00Z', updated_at: '2026-07-25T00:00:00Z' },
+      { id: 't1', version_id: 'v1', version: 1, project_id: 'p1', name: 'smoke', target_url: 'http://a', virtual_users: 1, duration_seconds: 1, created_at: '2026-07-24T00:00:00Z', updated_at: '2026-07-24T00:00:00Z' },
+    ];
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => versions }) as unknown as typeof fetch;
+
+    const result = await listTestVersions('t1');
+    expect(result).toEqual(versions);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/tests/t1/versions'),
+      expect.objectContaining({ cache: 'no-store' })
+    );
+  });
+
+  it('defaults to an empty array if the API returns null', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => null }) as unknown as typeof fetch;
+    await expect(listTestVersions('t1')).resolves.toEqual([]);
+  });
+
+  it('throws an ApiError with status 404 for an unknown test', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'test not found' }) as unknown as typeof fetch;
+    await expect(listTestVersions('nope')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('updateTest', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('PUTs the input and returns the new version', async () => {
+    const input = { name: 'smoke', target_url: 'http://x', virtual_users: 5, duration_seconds: 30 };
+    const saved = { id: 't1', version_id: 'v2', version: 2, project_id: 'p1', ...input, created_at: '2026-07-24T00:00:00Z', updated_at: '2026-07-25T00:00:00Z' };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => saved }) as unknown as typeof fetch;
+
+    const result = await updateTest('t1', input);
+    expect(result).toEqual(saved);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/tests/t1'),
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify(input) })
+    );
+  });
+});
+
+describe('listProjects', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('fetches the project registry', async () => {
+    const projects = [{ id: 'p1', name: 'Default', created_at: '2026-07-24T00:00:00Z' }];
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => projects }) as unknown as typeof fetch;
+
+    const result = await listProjects();
+    expect(result).toEqual(projects);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/projects'),
+      expect.objectContaining({ cache: 'no-store' })
+    );
+  });
+
+  it('defaults to an empty array if the API returns null', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => null }) as unknown as typeof fetch;
+    await expect(listProjects()).resolves.toEqual([]);
   });
 });
