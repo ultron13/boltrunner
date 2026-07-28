@@ -32,7 +32,7 @@
 - Consumes: nothing from earlier tasks.
 - Produces: `Migrate(ctx)` applies any `migrations/*.sql` file not yet recorded in `schema_migrations`, in filename order, each in its own transaction. Later tasks add migrations by **adding a file only** — no Go change. Also produces the package-level helper `migrationVersion(name string) (int, error)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `backend/internal/store/postgres/store_test.go`:
 
@@ -80,12 +80,12 @@ func TestMigrateRecordsVersionsAndIsIdempotent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd backend && go test ./internal/store/postgres/ -run 'TestMigrationVersion|TestMigrateRecords' -v`
 Expected: FAIL to **compile** — `undefined: migrationVersion`. (The compile failure is the red state; `migrationVersion` doesn't exist yet.)
 
-- [ ] **Step 3: Rewrite `Migrate` and its helpers**
+- [x] **Step 3: Rewrite `Migrate` and its helpers**
 
 In `backend/internal/store/postgres/postgres.go`, replace the import block and the two embed vars plus `Migrate`. The final top-of-file and migration section must read exactly:
 
@@ -218,17 +218,17 @@ func (db *DB) applyMigration(ctx context.Context, version int, body string) erro
 
 Delete the now-unused `migration0001` and `migration0002` vars.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd backend && go test ./internal/store/postgres/ -run 'TestMigrationVersion|TestMigrateRecords' -v`
 Expected: PASS. `TestMigrationVersionParsesLeadingInteger` passes with or without a DSN; `TestMigrateRecordsVersionsAndIsIdempotent` passes with a DSN and skips without one.
 
-- [ ] **Step 5: Run the whole backend suite**
+- [x] **Step 5: Run the whole backend suite**
 
 Run: `cd backend && go test ./...`
 Expected: PASS. In particular `TestConnectAndMigrate` and `TestMigrateFailsWithCancelledContext` (which relies on `Migrate` erroring on a cancelled context — the first `Exec` still does) must pass unchanged.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/store/postgres/postgres.go backend/internal/store/postgres/store_test.go
@@ -259,7 +259,7 @@ git commit -m "feat(backend): track applied migrations in schema_migrations"
   - Contract both stores honor: `CreateTest` with an empty `ProjectID` assigns the Default project.
   - `postgres.newScratchDB(t)` test helper (see Step 7) reused and extended by Task 3.
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 Create `backend/internal/store/postgres/migrations/0003_projects.sql`:
 
@@ -278,7 +278,7 @@ UPDATE tests SET project_id = (SELECT id FROM projects WHERE name = 'Default')
 ALTER TABLE tests ALTER COLUMN project_id SET NOT NULL;
 ```
 
-- [ ] **Step 2: Add the model and interface**
+- [x] **Step 2: Add the model and interface**
 
 In `backend/internal/model/model.go`, add `ProjectID` to `Test` (place it directly after `ID`) and append the `Project` type:
 
@@ -308,7 +308,7 @@ type ProjectStore interface {
 }
 ```
 
-- [ ] **Step 3: Write the failing memstore tests**
+- [x] **Step 3: Write the failing memstore tests**
 
 Create `backend/internal/store/memstore/projectstore_test.go`:
 
@@ -385,12 +385,12 @@ func TestCreateTestHonoursExplicitProject(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run them to verify they fail**
+- [x] **Step 4: Run them to verify they fail**
 
 Run: `cd backend && go test ./internal/store/memstore/ -run 'TestProjectStore|TestCreateTestDefaults|TestCreateTestHonours' -v`
 Expected: FAIL to compile — `undefined: NewProjectStore`, `undefined: DefaultProjectID`.
 
-- [ ] **Step 5: Implement the memstore side**
+- [x] **Step 5: Implement the memstore side**
 
 Create `backend/internal/store/memstore/projectstore.go`:
 
@@ -446,12 +446,12 @@ In `backend/internal/store/memstore/memstore.go`, add the project default to `Cr
 	}
 ```
 
-- [ ] **Step 6: Run the memstore tests to verify they pass**
+- [x] **Step 6: Run the memstore tests to verify they pass**
 
 Run: `cd backend && go test ./internal/store/memstore/ -v`
 Expected: PASS, including the pre-existing `TestTestStoreCreateListGet` unchanged.
 
-- [ ] **Step 7: Write the failing postgres tests, including the legacy-upgrade helper**
+- [x] **Step 7: Write the failing postgres tests, including the legacy-upgrade helper**
 
 Append to `backend/internal/store/postgres/store_test.go`. `newScratchDB` is the helper Task 3 extends — it proves migrations work on a database that already holds pre-0003 rows, which is exactly the shared dev database's situation:
 
@@ -612,12 +612,12 @@ func TestMigrateBackfillsProjectIDForLegacyRows(t *testing.T) {
 
 Add `"fmt"`, `"net/url"`, and `"time"` to that file's imports if not already present (`time` and `os` already are).
 
-- [ ] **Step 8: Run them to verify they fail**
+- [x] **Step 8: Run them to verify they fail**
 
 Run: `cd backend && go test ./internal/store/postgres/ -run 'TestListProjects|TestCreateTestDefaults|TestMigrateBackfillsProjectID' -v`
 Expected: FAIL to compile — `db.ListProjects` undefined. (With no DSN set they skip instead; if so, set one per Task 5 Step 1 before continuing, because this task's postgres behavior cannot otherwise be verified.)
 
-- [ ] **Step 9: Implement the postgres side**
+- [x] **Step 9: Implement the postgres side**
 
 In `backend/internal/store/postgres/postgres.go`, replace `CreateTest`, `ListTests`, and `GetTest`, and append `ListProjects` plus the `nullableUUID` helper:
 
@@ -690,17 +690,17 @@ func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 }
 ```
 
-- [ ] **Step 10: Run the tests to verify they pass**
+- [x] **Step 10: Run the tests to verify they pass**
 
 Run: `cd backend && go test ./internal/store/postgres/ -v`
 Expected: PASS, with every pre-existing test in the file unchanged.
 
-- [ ] **Step 11: Run the whole backend suite**
+- [x] **Step 11: Run the whole backend suite**
 
 Run: `cd backend && go test ./...`
 Expected: PASS.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add backend/internal/model/model.go backend/internal/store/store.go \
@@ -733,7 +733,7 @@ git commit -m "feat(backend): add a projects registry and default tests to it"
   - `store.TestStore` gains `UpdateTest(ctx, *model.Test) error` and `ListTestVersions(ctx, catalogID string) ([]model.Test, error)` (newest version first).
   - Contract both stores honor: `CreateRun` with an empty `TestCatalogID` derives it from `TestID`; `ListByTest` takes a **catalog** id and returns runs across all versions.
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 Create `backend/internal/store/postgres/migrations/0004_test_versioning.sql`:
 
@@ -752,7 +752,7 @@ ALTER TABLE runs ALTER COLUMN test_catalog_id SET NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_runs_test_catalog_id ON runs (test_catalog_id, created_at DESC);
 ```
 
-- [ ] **Step 2: Extend the model and the store interface**
+- [x] **Step 2: Extend the model and the store interface**
 
 In `backend/internal/model/model.go`, `Test` becomes:
 
@@ -801,7 +801,7 @@ type TestStore interface {
 
 (Delete the old standalone `var ErrNotFound = ...` line.)
 
-- [ ] **Step 3: Write the failing memstore tests**
+- [x] **Step 3: Write the failing memstore tests**
 
 Append to `backend/internal/store/memstore/memstore_test.go`:
 
@@ -958,12 +958,12 @@ func TestListByTestGroupsRunsAcrossVersions(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run them to verify they fail**
+- [x] **Step 4: Run them to verify they fail**
 
 Run: `cd backend && go test ./internal/store/memstore/ -v`
 Expected: FAIL to compile — `ts.UpdateTest` and `ts.ListTestVersions` undefined, `model.Test` has no field `VersionID`. (If Step 2 is already applied, the model fields exist and the failure is only the two undefined methods.)
 
-- [ ] **Step 5: Implement the memstore side**
+- [x] **Step 5: Implement the memstore side**
 
 Replace `backend/internal/store/memstore/memstore.go` entirely:
 
@@ -1132,12 +1132,12 @@ func (s *RunStore) ListByTest(ctx context.Context, catalogID string) ([]model.Ru
 }
 ```
 
-- [ ] **Step 6: Run the memstore tests to verify they pass**
+- [x] **Step 6: Run the memstore tests to verify they pass**
 
 Run: `cd backend && go test ./internal/store/memstore/ -v`
 Expected: PASS, including every pre-existing test unchanged.
 
-- [ ] **Step 7: Write the failing postgres tests**
+- [x] **Step 7: Write the failing postgres tests**
 
 Append to `backend/internal/store/postgres/store_test.go`:
 
@@ -1358,12 +1358,12 @@ func TestMigrateBackfillsVersioningForLegacyRows(t *testing.T) {
 }
 ```
 
-- [ ] **Step 8: Run them to verify they fail**
+- [x] **Step 8: Run them to verify they fail**
 
 Run: `cd backend && go test ./internal/store/postgres/ -v`
 Expected: FAIL to compile — `db.UpdateTest`, `db.ListTestVersions`, `db.updateTestAtVersion` undefined.
 
-- [ ] **Step 9: Implement the postgres side**
+- [x] **Step 9: Implement the postgres side**
 
 In `backend/internal/store/postgres/postgres.go`, add `"errors"` and `"github.com/jackc/pgx/v5/pgconn"` to the imports, then replace `CreateTest`, `ListTests`, `GetTest`, `CreateRun`, `GetRun`, and `ListByTest`, and add the new methods. Note `testColumns`/`scanTest` keep the three version-aware read queries from drifting apart:
 
@@ -1534,7 +1534,7 @@ func (db *DB) ListByTest(ctx context.Context, catalogID string) ([]model.Run, er
 
 Add `"github.com/google/uuid"` to the imports.
 
-- [ ] **Step 10: Pin the executed version when starting a run**
+- [x] **Step 10: Pin the executed version when starting a run**
 
 In `backend/internal/api/runs.go`, change the one line in `handleStartRun` that builds the run:
 
@@ -1542,12 +1542,12 @@ In `backend/internal/api/runs.go`, change the one line in `handleStartRun` that 
 	run := &model.Run{TestID: test.VersionID, TestCatalogID: test.ID, Status: model.RunPending}
 ```
 
-- [ ] **Step 11: Run the whole backend suite**
+- [x] **Step 11: Run the whole backend suite**
 
 Run: `cd backend && go test ./...`
 Expected: PASS — every new test plus every pre-existing memstore, postgres, and api test unchanged.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add backend/internal/model/model.go backend/internal/store/store.go \
@@ -1574,7 +1574,7 @@ git commit -m "feat(backend): version tests copy-on-write and pin runs to the ex
 - Consumes: `store.ProjectStore` (Task 2); `store.ErrConflict`, `TestStore.UpdateTest`, `TestStore.ListTestVersions`, `model.Test.VersionID`/`Version` (Task 3).
 - Produces: `api.NewServer(testStore store.TestStore, runStore store.RunStore, projectStore store.ProjectStore, k8sClient kubernetes.Interface, jobCfg k8sjob.Config) *Server` — note the **third** parameter is new. Routes `PUT /api/tests/{testID}`, `GET /api/tests/{testID}/versions`, `GET /api/projects`.
 
-- [ ] **Step 1: Write the failing handler tests**
+- [x] **Step 1: Write the failing handler tests**
 
 Append to `backend/internal/api/tests_test.go`:
 
@@ -1741,12 +1741,12 @@ func TestCreatedTestBelongsToTheDefaultProject(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd backend && go test ./internal/api/ -v`
 Expected: FAIL — the `PUT`, `/versions`, and `/projects` requests return 404/405 because no route exists yet.
 
-- [ ] **Step 3: Add the project handler**
+- [x] **Step 3: Add the project handler**
 
 Create `backend/internal/api/projects.go`:
 
@@ -1769,7 +1769,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-- [ ] **Step 4: Add the test update and versions handlers**
+- [x] **Step 4: Add the test update and versions handlers**
 
 Replace `backend/internal/api/tests.go` entirely:
 
@@ -1897,7 +1897,7 @@ func (s *Server) handleListTestVersions(w http.ResponseWriter, r *http.Request) 
 }
 ```
 
-- [ ] **Step 5: Wire the routes and the new store**
+- [x] **Step 5: Wire the routes and the new store**
 
 In `backend/internal/api/server.go`, add the field, the parameter, and the routes:
 
@@ -1961,17 +1961,17 @@ In `backend/cmd/server/main.go`, pass the DB as the project store too — it sat
 	s := api.NewServer(db, db, db, k8sClient, jobCfg)
 ```
 
-- [ ] **Step 6: Run the API tests to verify they pass**
+- [x] **Step 6: Run the API tests to verify they pass**
 
 Run: `cd backend && go test ./internal/api/ -v`
 Expected: PASS, including every pre-existing api test unchanged.
 
-- [ ] **Step 7: Run the whole backend suite and build**
+- [x] **Step 7: Run the whole backend suite and build**
 
 Run: `cd backend && go build ./... && go test ./...`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/internal/api/server.go backend/internal/api/tests.go backend/internal/api/projects.go \
@@ -1989,7 +1989,7 @@ git commit -m "feat(backend): expose test versions and the project registry over
 - Consumes: everything from Tasks 1-4.
 - Produces: no code. A verification record for the final review.
 
-- [ ] **Step 1: Port-forward the dev Postgres and create a dedicated test database**
+- [x] **Step 1: Port-forward the dev Postgres and create a dedicated test database**
 
 The dev cluster already runs Postgres. Forward it and make a database **separate from the shared `boltrunner` database** — never point tests at that one (see Global Constraints).
 
@@ -2002,7 +2002,7 @@ kubectl -n boltrunner exec deploy/boltrunner-postgres -- \
 
 Expected: `CREATE DATABASE`. If it already exists, `psql` reports an error that is safe to ignore.
 
-- [ ] **Step 2: Run the full backend suite against it**
+- [x] **Step 2: Run the full backend suite against it**
 
 ```bash
 cd backend && BOLTRUNNER_TEST_DSN="postgres://boltrunner:boltrunner@localhost:5432/boltrunner_bol28_test" go test ./... -count=1
@@ -2010,7 +2010,7 @@ cd backend && BOLTRUNNER_TEST_DSN="postgres://boltrunner:boltrunner@localhost:54
 
 Expected: PASS with no skips in `internal/store/postgres`. This is the run that actually exercises the migrations, the `DISTINCT ON` + window-function queries, the `23505` conflict path, and the legacy-upgrade backfills in `newScratchDB`.
 
-- [ ] **Step 3: Confirm coverage still clears the gate**
+- [x] **Step 3: Confirm coverage still clears the gate**
 
 ```bash
 cd backend && BOLTRUNNER_TEST_DSN="postgres://boltrunner:boltrunner@localhost:5432/boltrunner_bol28_test" \
@@ -2019,7 +2019,7 @@ cd backend && BOLTRUNNER_TEST_DSN="postgres://boltrunner:boltrunner@localhost:54
 
 Expected: total coverage ≥ 88%. If short, add tests for the uncovered branches — do not lower the threshold.
 
-- [ ] **Step 4: Prove the frontend is untouched**
+- [x] **Step 4: Prove the frontend is untouched**
 
 ```bash
 git diff --stat 576b364..HEAD -- frontend/
@@ -2033,7 +2033,7 @@ cd frontend && npx vitest run
 
 Expected: PASS, the same count as before this plan began (103 tests / 24 files).
 
-- [ ] **Step 5: Record what is verified locally vs. in CI**
+- [x] **Step 5: Record what is verified locally vs. in CI**
 
 Do **not** attempt to migrate the shared dev database or redeploy the in-cluster backend image. `kind` is not installed on this machine (`kind: command not found`), so the image cannot be rebuilt or loaded locally, and migrating the shared database while the old image is deployed would break it — the new `NOT NULL` columns have no defaults, so the old binary's inserts would fail (see Global Constraints).
 
@@ -2043,7 +2043,7 @@ This is a gap in *local* verification only. `.github/workflows/ci.yml` covers th
 
 Write a short note in the task report stating plainly which checks ran locally, that browser e2e against the new backend is delegated to CI's `integration-kind` job rather than run here, and that the frontend is provably unchanged. Do not claim end-to-end verification that did not happen locally — and equally, do not claim it is impossible, because CI performs it.
 
-- [ ] **Step 6: Clean up**
+- [x] **Step 6: Clean up**
 
 ```bash
 kubectl -n boltrunner exec deploy/boltrunner-postgres -- \
@@ -2061,3 +2061,54 @@ Expected: `DROP DATABASE`. Scratch databases created by `newScratchDB` drop them
 - **Placeholder scan.** None — every step names exact files, exact code, exact commands, and expected output.
 - **Type consistency.** `model.Test.ID` is the catalog id everywhere; `VersionID` is the version PK everywhere. `GetTest`/`ListTestVersions`/`ListByTest` all take a catalog id. `NewServer`'s new `projectStore` is the third parameter in the definition (Task 4 Step 5), in `newTestServer` (Step 5), and in `main.go` (Step 5) — all consistent. `store.ErrConflict` is defined in Task 3 and consumed in Tasks 3 and 4. `newScratchDB(t, maxVersion)` is defined in Task 2 Step 7 and reused in Task 3 Step 7 with the same signature. `nullableUUID` is introduced in Task 2 Step 9 and reused by `CreateRun` in Task 3 Step 9.
 - **Ordering.** Task 3 makes `runs.test_catalog_id` `NOT NULL` and in the same task updates `handleStartRun` plus both `CreateRun` implementations to populate it, so no task leaves the system unable to start a run.
+
+---
+
+## Verification record (2026-07-28)
+
+**Verified locally**, against the dev-cluster Postgres via port-forward, on a
+dedicated `boltrunner_bol28_test` database (never the shared `boltrunner` one):
+
+* `go test ./... -count=1` — **PASS, zero skips** across every package. 36 tests
+  ran in `internal/store/postgres`, so the migrations, the backfills, the
+  `DISTINCT ON` + window-function queries and the `23505` conflict path all
+  actually executed rather than being skipped.
+* Coverage **89.0%**, clearing the 88% gate. Computed exactly as
+  `.github/workflows/ci.yml` does it (`go test ./... -coverprofile` →
+  `go tool cover -func | grep total:`).
+* Re-run against a **freshly created empty** database with a
+  `?sslmode=disable` query string, mirroring CI's service container and DSN:
+  identical PASS and identical 89.0%. This is what exercises `replaceDBName`'s
+  query-string preservation, which the local DSN alone would not.
+* `gofmt -l` clean, `go vet ./...` clean.
+* Frontend untouched: `git diff 5708923..HEAD -- frontend/` is **empty** and
+  no `frontend/` file is modified in the working tree. `npx vitest run` →
+  **103 passed / 24 files**, unchanged.
+* Shared dev database confirmed **not migrated** — `public` still holds only
+  `tests, runs, run_metric_snapshots`, and `tests` still has the pre-0003
+  column set. The deployed old backend image is therefore unaffected.
+* No leaked scratch databases (`boltrunner_scratch_%` empty after the run), and
+  both `boltrunner_bol28_*` databases were dropped afterwards.
+
+**Manual smoke test of handlers against real Postgres.** The API tests use
+memstore, so "real handlers + real Postgres" is otherwise untested. A server
+was run against the test database and exercised by hand: `GET /api/projects`,
+`POST /api/tests`, `PUT /api/tests/{id}` (v1 → v2 with a new `version_id` and a
+preserved family `created_at`), `GET /api/tests/{id}/versions` (newest first),
+unknown and malformed `project_id` → **400**, unknown catalog id on `PUT` →
+**404**. `GET /api/tests` confirmed that a family edited later still does not
+overtake a family created after it.
+
+**Not verified locally, delegated to CI.** Browser e2e against the new backend
+was **not** run here: `kind` is not installed on this machine, so the images
+cannot be rebuilt or loaded, and migrating the shared dev database while the
+old image is deployed would break it. CI's `integration-kind` job builds all
+three images, deploys them and runs the browser e2e against the new backend —
+that is where end-to-end verification happens. CI's `backend-unit` job
+independently re-runs everything above against a clean `postgres:16`.
+
+**Plan correction.** Task 5 Step 4 named `576b364` as the frontend baseline,
+but that commit sits mid-way through the *previous* (responsive-portal) plan,
+so its diff shows that plan's frontend work and can never be empty. The true
+BOL-28 baseline is `5708923` (parent of the first BOL-28 commit `024d61d`),
+against which the frontend diff is empty as the constraint requires.
