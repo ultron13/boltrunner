@@ -194,6 +194,79 @@ func TestListProjectsReturnsTheDefaultProject(t *testing.T) {
 	}
 }
 
+// TestRunIsPinnedToTheExecutedVersion guards the exact line that makes run
+// pinning work (runs.go's handleStartRun sets TestID: test.VersionID). Every
+// other test in this package only ever creates v1 tests, where VersionID ==
+// ID in memstore -- so a regression to TestID: test.ID would pass the rest of
+// the suite silently. Editing the test first forces VersionID != ID, so a run
+// started afterward can only pin correctly if the version id, not the catalog
+// id, is actually used.
+func TestRunIsPinnedToTheExecutedVersion(t *testing.T) {
+	s := newTestServer()
+	created := createTestViaAPI(t, s, "pinned")
+
+	body, _ := json.Marshal(map[string]any{
+		"name": "pinned", "target_url": "http://changed",
+		"virtual_users": 7, "duration_seconds": 70,
+	})
+	putReq := httptest.NewRequest(http.MethodPut, "/api/tests/"+created.ID, bytes.NewReader(body))
+	putRec := httptest.NewRecorder()
+	s.Router().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", putRec.Code, putRec.Body.String())
+	}
+	var updated model.Test
+	if err := json.Unmarshal(putRec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode updated test: %v", err)
+	}
+	// The test proves nothing unless versioning actually produced a distinct
+	// version id -- assert that loudly rather than let a versioning
+	// regression masquerade as a pinning regression.
+	if updated.Version != 2 {
+		t.Fatalf("expected version 2, got %d", updated.Version)
+	}
+	if updated.VersionID == created.ID {
+		t.Fatalf("expected a version id distinct from the catalog id %q, got the same value", created.ID)
+	}
+
+	runReq := httptest.NewRequest(http.MethodPost, "/api/tests/"+created.ID+"/runs", nil)
+	runRec := httptest.NewRecorder()
+	s.Router().ServeHTTP(runRec, runReq)
+	if runRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", runRec.Code, runRec.Body.String())
+	}
+	var run model.Run
+	if err := json.Unmarshal(runRec.Body.Bytes(), &run); err != nil {
+		t.Fatalf("decode run: %v", err)
+	}
+	if run.TestID != updated.VersionID {
+		t.Fatalf("expected run.TestID (%q) to pin the executed version.VersionID (%q)", run.TestID, updated.VersionID)
+	}
+	if run.TestCatalogID != created.ID {
+		t.Fatalf("expected run.TestCatalogID (%q) to be the catalog id (%q)", run.TestCatalogID, created.ID)
+	}
+
+	historyReq := httptest.NewRequest(http.MethodGet, "/api/tests/"+created.ID+"/runs", nil)
+	historyRec := httptest.NewRecorder()
+	s.Router().ServeHTTP(historyRec, historyReq)
+	if historyRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", historyRec.Code, historyRec.Body.String())
+	}
+	var runs []model.Run
+	if err := json.Unmarshal(historyRec.Body.Bytes(), &runs); err != nil {
+		t.Fatalf("decode run history: %v", err)
+	}
+	found := false
+	for _, r := range runs {
+		if r.ID == run.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the pinned run %q to appear in the catalog id's run history, got %+v", run.ID, runs)
+	}
+}
+
 func TestCreatedTestBelongsToTheDefaultProject(t *testing.T) {
 	s := newTestServer()
 	created := createTestViaAPI(t, s, "projected")

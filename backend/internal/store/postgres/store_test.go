@@ -372,6 +372,29 @@ func TestMigrationVersionParsesLeadingInteger(t *testing.T) {
 	}
 }
 
+// TestApplyMigrationDoesNotRecordAFailedMigration guards the transactional
+// wrapping in applyMigration: the migration body and the schema_migrations
+// insert run in the same transaction, so a body that fails must not leave
+// behind a record claiming it succeeded -- that would make Migrate skip it
+// forever on every future run.
+func TestApplyMigrationDoesNotRecordAFailedMigration(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	const version = 9999 // far outside the real migration range; cannot collide
+	if err := db.applyMigration(ctx, version, "SELECT 1/0"); err == nil {
+		t.Fatal("expected an error from a division-by-zero migration body")
+	}
+
+	applied, err := db.migrationApplied(ctx, version)
+	if err != nil {
+		t.Fatalf("migrationApplied: %v", err)
+	}
+	if applied {
+		t.Fatal("expected the failed migration to not be recorded as applied")
+	}
+}
+
 func TestMigrateRecordsVersionsAndIsIdempotent(t *testing.T) {
 	db := setupDB(t) // setupDB already calls Migrate once
 	ctx := context.Background()
@@ -583,6 +606,57 @@ func TestUpdateTestCreatesNewVersionAndPinsOldRuns(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected the v1 run to still appear in the test's history after the edit")
+	}
+}
+
+// TestUpdateTestDoesNotReorderListTests is the postgres-backed counterpart to
+// memstore's test of the same name. It is the only reason ListTests uses a
+// DISTINCT ON subquery ordered by MIN(created_at) OVER (PARTITION BY
+// catalog_id) instead of a plain ORDER BY created_at DESC -- the latter would
+// let editing a test promote it to the top of the list. Because this
+// database is shared and pre-populated across tests, absolute positions
+// can't be asserted; instead this checks the *relative* order of two fresh
+// families survives an edit to the older one.
+func TestUpdateTestDoesNotReorderListTests(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	older := &model.Test{Name: "pg-order-older", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, older); err != nil {
+		t.Fatalf("CreateTest (older): %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	newer := &model.Test{Name: "pg-order-newer", TargetURL: "http://b", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, newer); err != nil {
+		t.Fatalf("CreateTest (newer): %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+
+	edit := &model.Test{ID: older.ID, Name: "pg-order-older", TargetURL: "http://a2", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.UpdateTest(ctx, edit); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+
+	all, err := db.ListTests(ctx)
+	if err != nil {
+		t.Fatalf("ListTests: %v", err)
+	}
+	olderIdx, newerIdx := -1, -1
+	for i, got := range all {
+		if got.ID == older.ID {
+			olderIdx = i
+		}
+		if got.ID == newer.ID {
+			newerIdx = i
+		}
+	}
+	if olderIdx == -1 || newerIdx == -1 {
+		t.Fatalf("expected to find both families in ListTests, olderIdx=%d newerIdx=%d", olderIdx, newerIdx)
+	}
+	// ListTests orders newest-family-first, so newer must come first
+	// (a lower index) even though older was the one just edited.
+	if olderIdx <= newerIdx {
+		t.Fatalf("expected editing the older family not to promote it: older index %d, newer index %d", olderIdx, newerIdx)
 	}
 }
 
