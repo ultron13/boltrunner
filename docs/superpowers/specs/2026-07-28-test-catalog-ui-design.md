@@ -55,26 +55,44 @@ Application / Environment registries). Both remain open afterwards — see "Out 
 
 ### `frontend/lib/api-client.ts` (edit — purely additive)
 
-Extend the existing `Test` type with the three fields the backend already returns:
+Extend the existing `Test` type with the fields the backend already returns, **as optional**,
+and add a `TestVersion` alias that makes them required where version identity actually matters:
 
 ```ts
 export type Test = {
   id: string;              // catalog id — stable across versions
-  version_id: string;      // this version's own id
-  version: number;
-  project_id: string;
   name: string;
   target_url: string;
   virtual_users: number;
   duration_seconds: number;
   created_at: string;      // the family's creation time, not this version's
+  // Present on every test-shaped response the backend sends today. Optional
+  // here so the existing list-shaped fixtures keep typechecking; use
+  // TestVersion wherever the version identity is actually required.
+  version?: number;
+  version_id?: string;
+  project_id?: string;
   updated_at?: string;
+};
+
+export type TestVersion = Test & {
+  version: number;
+  version_id: string;
+  updated_at: string;
 };
 
 export type Project = { id: string; name: string; created_at: string };
 
 export type UpdateTestInput = CreateTestInput;
 ```
+
+`listTestVersions` and `updateTest` return `TestVersion`; `listTests` and `createTest` keep
+returning `Test`. The split exists for a concrete reason: `tsconfig.json` sets `strict: true`
+and includes `**/*.tsx`, and CI runs `npm run build`, so Next typechecks the test files too.
+Making the new fields required would break roughly 20 existing `Test` fixtures across 8 test
+files that predate versioning — pure churn for no safety. Making them optional everywhere
+instead would force non-null assertions in `VersionHistoryTable`, which needs `version` and
+`version_id` to be definite. The alias gets both: no fixture churn, no assertions.
 
 `created_at` is the **family's** creation time on every version row — the backend deliberately
 returns the family's `MIN(created_at)` so that editing a test does not reshuffle the list.
@@ -83,8 +101,8 @@ Version rows carry their own timestamp in `updated_at`. The version history tabl
 
 Three new functions, following the existing `unwrap` pattern:
 
-* `listTestVersions(testId): Promise<Test[]>` — `GET /api/tests/{id}/versions`, `cache: 'no-store'`.
-* `updateTest(testId, input): Promise<Test>` — `PUT /api/tests/{id}`, JSON body.
+* `listTestVersions(testId): Promise<TestVersion[]>` — `GET /api/tests/{id}/versions`, `cache: 'no-store'`.
+* `updateTest(testId, input): Promise<TestVersion>` — `PUT /api/tests/{id}`, JSON body.
 * `listProjects(): Promise<Project[]>` — `GET /api/projects`, `cache: 'no-store'`, `?? []` like `listTests`.
 
 No existing signature changes.
@@ -117,7 +135,7 @@ of the dashboard page for the same reason.
 
 The only stateful component. Owns:
 
-* `versions: Test[]`, `loadState: 'loading' | 'ready' | 'notfound' | 'error'`, `notice: string | null`.
+* `versions: TestVersion[]`, `loadState: 'loading' | 'ready' | 'notfound' | 'error'`, `notice: string | null`.
 * On mount and after a successful save: `listTestVersions(testId)`. An `ApiError` with
   `status === 404` sets `notfound`; any other failure sets `error`.
 * `current = versions[0]` — the configuration the form is seeded from.
