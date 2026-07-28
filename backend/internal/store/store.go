@@ -30,7 +30,9 @@ type TestStore interface {
 type RunStore interface {
 	CreateRun(ctx context.Context, r *model.Run) error
 	GetRun(ctx context.Context, id string) (*model.Run, error)
-	ListByTest(ctx context.Context, testID string) ([]model.Run, error)
+	// ListByTest takes a catalog id and returns runs across all versions of
+	// that test family.
+	ListByTest(ctx context.Context, catalogID string) ([]model.Run, error)
 	UpdateRunStatus(ctx context.Context, id string, status model.RunStatus, errMsg string) error
 	AppendMetricSnapshot(ctx context.Context, s *model.RunMetricSnapshot) error
 	LatestSnapshot(ctx context.Context, runID string) (*model.RunMetricSnapshot, error)

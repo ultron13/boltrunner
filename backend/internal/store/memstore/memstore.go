@@ -83,11 +83,12 @@ func (s *TestStore) UpdateTest(ctx context.Context, t *model.Test) error {
 		return store.ErrNotFound
 	}
 	next := latest.Version + 1
-	for _, existing := range s.tests {
-		if existing.ID == t.ID && existing.Version == next {
-			return store.ErrConflict
-		}
-	}
+	// No conflict check is needed here: UpdateTest holds s.mu for its entire
+	// body and latestLocked always returns the current max version, so no
+	// other goroutine can ever have claimed `next` by the time we write it.
+	// Postgres has no equivalent in-process lock across connections, so it
+	// relies instead on the (catalog_id, version) unique index and reports
+	// store.ErrConflict when that index rejects a racing insert.
 	t.ProjectID = latest.ProjectID
 	t.VersionID = uuid.NewString()
 	t.Version = next
