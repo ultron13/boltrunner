@@ -20,14 +20,17 @@ test('theme toggle switches to dark mode and persists across reload', async ({ p
 });
 
 test('history page lists a real run and links to its detail page', async ({ page }) => {
+  // Timestamped because the database outlives a run: a fixed name matches every
+  // row an earlier run left behind, and getByRole then fails strict mode.
+  const name = `History E2E Test ${Date.now()}`;
   await page.goto('/');
-  await page.getByLabel(/name/i).fill('History E2E Test');
+  await page.getByLabel(/name/i).fill(name);
   await page.getByLabel(/target url/i).fill('http://boltrunner-backend.boltrunner.svc:8080/healthz');
   await page.getByLabel(/virtual users/i).fill('2');
   await page.getByLabel(/duration/i).fill('10');
   await page.getByRole('button', { name: /create test/i }).click();
 
-  const row = page.getByRole('row', { name: /History E2E Test/i });
+  const row = page.getByRole('row', { name: new RegExp(name, 'i') });
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: /run/i }).click();
   await expect(page).toHaveURL(/\/runs\/.+/);

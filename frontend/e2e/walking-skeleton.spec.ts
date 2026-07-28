@@ -1,15 +1,18 @@
 import { test, expect } from '@playwright/test';
 
 test('create a test, run it, watch live metrics, see completion', async ({ page }) => {
+  // Timestamped because the database outlives a run: a fixed name matches every
+  // row an earlier run left behind, and getByRole then fails strict mode.
+  const name = `E2E Smoke Test ${Date.now()}`;
   await page.goto('/');
 
-  await page.getByLabel(/name/i).fill('E2E Smoke Test');
+  await page.getByLabel(/name/i).fill(name);
   await page.getByLabel(/target url/i).fill('http://boltrunner-backend.boltrunner.svc:8080/healthz');
   await page.getByLabel(/virtual users/i).fill('3');
   await page.getByLabel(/duration/i).fill('20');
   await page.getByRole('button', { name: /create test/i }).click();
 
-  const row = page.getByRole('row', { name: /E2E Smoke Test/i });
+  const row = page.getByRole('row', { name: new RegExp(name, 'i') });
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: /run/i }).click();
 
@@ -24,14 +27,15 @@ test('create a test, run it, watch live metrics, see completion', async ({ page 
 });
 
 test('cancel a running test stops it', async ({ page }) => {
+  const name = `E2E Cancel Test ${Date.now()}`;
   await page.goto('/');
 
-  await page.getByLabel(/name/i).fill('E2E Cancel Test');
+  await page.getByLabel(/name/i).fill(name);
   await page.getByLabel(/target url/i).fill('http://boltrunner-backend.boltrunner.svc:8080/healthz');
   await page.getByLabel(/virtual users/i).fill('3');
   await page.getByLabel(/duration/i).fill('60');
   await page.getByRole('button', { name: /create test/i }).click();
-  const row = page.getByRole('row', { name: /E2E Cancel Test/i });
+  const row = page.getByRole('row', { name: new RegExp(name, 'i') });
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: /run/i }).click();
 
