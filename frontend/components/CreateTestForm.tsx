@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { createTest, Test } from '@/lib/api-client';
+import { TestFields, TestField } from '@/components/TestFields';
 
 export function CreateTestForm({ onCreated }: { onCreated: (test: Test) => void }) {
   const [name, setName] = useState('');
@@ -10,6 +11,13 @@ export function CreateTestForm({ onCreated }: { onCreated: (test: Test) => void 
   const [durationSeconds, setDurationSeconds] = useState('30');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const setters: Record<TestField, (v: string) => void> = {
+    name: setName,
+    targetUrl: setTargetUrl,
+    virtualUsers: setVirtualUsers,
+    durationSeconds: setDurationSeconds,
+  };
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -34,22 +42,13 @@ export function CreateTestForm({ onCreated }: { onCreated: (test: Test) => void 
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3 max-w-md">
-      <label className="flex flex-col gap-1">
-        <span>Name</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span>Target URL</span>
-        <input value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} required type="url" />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span>Virtual users</span>
-        <input value={virtualUsers} onChange={(e) => setVirtualUsers(e.target.value)} required type="number" min={1} />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span>Duration (seconds)</span>
-        <input value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value)} required type="number" min={1} />
-      </label>
+      <TestFields
+        name={name}
+        targetUrl={targetUrl}
+        virtualUsers={virtualUsers}
+        durationSeconds={durationSeconds}
+        onChange={(field, value) => setters[field](value)}
+      />
       {error && <p className="text-red-600">{error}</p>}
       <button type="submit" disabled={submitting}>
         {submitting ? 'Creating…' : 'Create test'}
