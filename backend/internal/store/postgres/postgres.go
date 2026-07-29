@@ -235,6 +235,38 @@ func (db *DB) ListTests(ctx context.Context) ([]model.Test, error) {
 	return out, rows.Err()
 }
 
+func (db *DB) ListTestsForProject(ctx context.Context, projectID string) ([]model.Test, error) {
+	// Reject a malformed id before pgx tries to encode it, for the same reason
+	// CreateTest does: an encode failure is indistinguishable by type from a
+	// genuine connection failure, and would report bad input as an outage.
+	if _, err := uuid.Parse(projectID); err != nil {
+		return []model.Test{}, nil
+	}
+	rows, err := db.Pool.Query(ctx,
+		`SELECT catalog_id, id, version, project_id, name, target_url, virtual_users,
+		        duration_seconds, catalog_created_at, created_at
+		 FROM (
+		     SELECT DISTINCT ON (catalog_id) `+testColumns+`
+		     FROM tests
+		     WHERE project_id = $1
+		     ORDER BY catalog_id, version DESC
+		 ) latest
+		 ORDER BY catalog_created_at DESC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Test{}
+	for rows.Next() {
+		var t model.Test
+		if err := scanTest(rows, &t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) GetTest(ctx context.Context, catalogID string) (*model.Test, error) {
 	var t model.Test
 	err := scanTest(db.Pool.QueryRow(ctx,

@@ -64,6 +64,22 @@ func (s *TestStore) ListTests(ctx context.Context) ([]model.Test, error) {
 	return out, nil
 }
 
+// ListTestsForProject filters ListTests rather than re-deriving the latest
+// version per family, so it inherits that collapsing and the sort order.
+func (s *TestStore) ListTestsForProject(ctx context.Context, projectID string) ([]model.Test, error) {
+	all, err := s.ListTests(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Test, 0, len(all))
+	for _, t := range all {
+		if t.ProjectID == projectID {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (s *TestStore) GetTest(ctx context.Context, catalogID string) (*model.Test, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

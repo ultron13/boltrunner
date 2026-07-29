@@ -243,3 +243,72 @@ func TestListTestVersionsUnknownIDIsEmptyNotNil(t *testing.T) {
 		t.Fatalf("expected 0 versions, got %d", len(versions))
 	}
 }
+
+// memstore's TestStore has no project registry: CreateTest rejects any id but
+// the seeded Default (see its ErrInvalidReference branch). So the filter is
+// exercised here as "the seeded project versus anything else"; postgres, which
+// has a real registry, covers filtering between two populated projects.
+func TestListTestsForProjectReturnsOnlyThatProjectsTests(t *testing.T) {
+	s := NewTestStore()
+	ctx := context.Background()
+	mine := &model.Test{ProjectID: DefaultProjectID, Name: "mine", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
+	if err := s.CreateTest(ctx, mine); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	got, err := s.ListTestsForProject(ctx, DefaultProjectID)
+	if err != nil {
+		t.Fatalf("ListTestsForProject: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "mine" {
+		t.Fatalf("expected the Default-project test, got %+v", got)
+	}
+
+	other, err := s.ListTestsForProject(ctx, "00000000-0000-0000-0000-0000000000ff")
+	if err != nil {
+		t.Fatalf("ListTestsForProject: %v", err)
+	}
+	if len(other) != 0 {
+		t.Fatalf("expected no tests for another project, got %+v", other)
+	}
+}
+
+func TestListTestsForProjectReturnsEmptyForAnUnknownProject(t *testing.T) {
+	s := NewTestStore()
+	got, err := s.ListTestsForProject(context.Background(), "p-nope")
+	if err != nil {
+		t.Fatalf("expected no error for an unknown project, got %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected an empty slice, not nil -- it is JSON-encoded directly")
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected an empty slice, got %+v", got)
+	}
+}
+
+// The filter must collapse each family to its latest version, exactly as
+// ListTests does -- a scoped list that showed every version would double-count.
+func TestListTestsForProjectKeepsLatestVersionOnly(t *testing.T) {
+	s := NewTestStore()
+	ctx := context.Background()
+	tst := &model.Test{ProjectID: DefaultProjectID, Name: "v1", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
+	if err := s.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	tst.Name = "v2"
+	if err := s.UpdateTest(ctx, tst); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+
+	got, err := s.ListTestsForProject(ctx, DefaultProjectID)
+	if err != nil {
+		t.Fatalf("ListTestsForProject: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected one row for the family, got %d: %+v", len(got), got)
+	}
+	if got[0].Name != "v2" {
+		t.Fatalf("expected the latest version, got %q", got[0].Name)
+	}
+}

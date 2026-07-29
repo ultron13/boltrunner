@@ -19,6 +19,10 @@ var (
 type TestStore interface {
 	CreateTest(ctx context.Context, t *model.Test) error
 	ListTests(ctx context.Context) ([]model.Test, error)
+	// ListTestsForProject is ListTests restricted to one project. An unknown or
+	// malformed project id yields an empty slice, not an error -- it is
+	// indistinguishable from a project that simply has no tests.
+	ListTestsForProject(ctx context.Context, projectID string) ([]model.Test, error)
 	GetTest(ctx context.Context, catalogID string) (*model.Test, error)
 	// UpdateTest writes a new immutable version of t.ID's test rather than
 	// mutating the current one.

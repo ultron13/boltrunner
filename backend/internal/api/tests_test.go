@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/boltrunner/backend/internal/model"
+	"github.com/boltrunner/backend/internal/store/memstore"
 )
 
 func TestCreateAndListTests(t *testing.T) {
@@ -303,5 +305,56 @@ func TestCreateTestWithUnknownProjectIsRejected(t *testing.T) {
 	}
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListTestsFiltersByProjectIDWhenGiven(t *testing.T) {
+	srv := newTestServer()
+
+	body := `{"name":"in-default","target_url":"http://a","virtual_users":1,"duration_seconds":1,"project_id":"` + memstore.DefaultProjectID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tests", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/tests?project_id="+memstore.DefaultProjectID, nil))
+	var scoped []model.Test
+	if err := json.Unmarshal(rec.Body.Bytes(), &scoped); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(scoped) != 1 {
+		t.Fatalf("expected 1 test in Default, got %d", len(scoped))
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/tests?project_id=00000000-0000-0000-0000-0000000000ff", nil))
+	var empty []model.Test
+	if err := json.Unmarshal(rec.Body.Bytes(), &empty); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected no tests for an unknown project, got %d", len(empty))
+	}
+}
+
+// The three e2e specs and the Go integration test all call GET /api/tests with
+// no parameter and expect everything back.
+func TestListTestsWithoutProjectIDStaysUnfiltered(t *testing.T) {
+	srv := newTestServer()
+	body := `{"name":"anything","target_url":"http://a","virtual_users":1,"duration_seconds":1}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tests", strings.NewReader(body))
+	srv.Router().ServeHTTP(httptest.NewRecorder(), req)
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/tests", nil))
+	var all []model.Test
+	if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected the unfiltered list to contain the test, got %d", len(all))
 	}
 }

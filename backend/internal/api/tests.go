@@ -60,7 +60,17 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
-	tests, err := s.testStore.ListTests(r.Context())
+	var (
+		tests []model.Test
+		err   error
+	)
+	// An absent project_id means "every project": existing callers, the Go
+	// integration test and three e2e specs all depend on that.
+	if projectID := r.URL.Query().Get("project_id"); projectID != "" {
+		tests, err = s.testStore.ListTestsForProject(r.Context(), projectID)
+	} else {
+		tests, err = s.testStore.ListTests(r.Context())
+	}
 	if err != nil {
 		http.Error(w, "failed to list tests", http.StatusInternalServerError)
 		return

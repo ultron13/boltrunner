@@ -944,3 +944,68 @@ func TestCreateProjectConflictsWithTheSeededDefault(t *testing.T) {
 		t.Fatalf("expected ErrConflict for the seeded Default name, got %v", err)
 	}
 }
+
+func TestListTestsForProjectFiltersAndKeepsLatestVersionOnly(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	other := &model.Project{Name: uniqueProjectName("Scoped")}
+	if err := db.CreateProject(ctx, other); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	inOther := &model.Test{ProjectID: other.ID, Name: "in-other", TargetURL: "http://b", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, inOther); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	// A test in the Default project, which must not appear in the scoped list.
+	inDefault := &model.Test{Name: "in-default", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, inDefault); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	// A second version: the filter must still collapse the family to its
+	// latest version, exactly as ListTests does.
+	inOther.Name = "in-other-v2"
+	if err := db.UpdateTest(ctx, inOther); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+
+	got, err := db.ListTestsForProject(ctx, other.ID)
+	if err != nil {
+		t.Fatalf("ListTestsForProject: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected exactly one row for the other project, got %d: %+v", len(got), got)
+	}
+	if got[0].Name != "in-other-v2" {
+		t.Fatalf("expected the latest version, got %q", got[0].Name)
+	}
+}
+
+// A malformed id must not surface as a 500. pgx fails to encode a non-UUID
+// client-side, which is indistinguishable by type from a connection failure.
+func TestListTestsForProjectReturnsEmptyForAMalformedID(t *testing.T) {
+	db := setupDB(t)
+	got, err := db.ListTestsForProject(context.Background(), "not-a-uuid")
+	if err != nil {
+		t.Fatalf("expected no error for a malformed id, got %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected an empty slice, not nil -- it is JSON-encoded directly")
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected an empty slice, got %+v", got)
+	}
+}
+
+func TestListTestsForProjectReturnsEmptyForAnUnknownProject(t *testing.T) {
+	db := setupDB(t)
+	got, err := db.ListTestsForProject(context.Background(), "00000000-0000-0000-0000-0000000000ff")
+	if err != nil {
+		t.Fatalf("expected no error for an unknown project, got %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected an empty slice, got %+v", got)
+	}
+}
