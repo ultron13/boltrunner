@@ -163,7 +163,8 @@ func scanTest(row testScanner, t *model.Test) error {
 }
 
 // isUniqueViolation reports whether err is SQLSTATE 23505 (unique_violation) --
-// here, two concurrent edits racing for the same (catalog_id, version).
+// two concurrent edits racing for the same (catalog_id, version), or an
+// attempt to create a project whose name is already taken.
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
@@ -312,6 +313,17 @@ func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+func (db *DB) CreateProject(ctx context.Context, p *model.Project) error {
+	err := db.Pool.QueryRow(ctx,
+		`INSERT INTO projects (name) VALUES ($1) RETURNING id, created_at`,
+		p.Name,
+	).Scan(&p.ID, &p.CreatedAt)
+	if isUniqueViolation(err) {
+		return store.ErrConflict
+	}
+	return err
 }
 
 func (db *DB) CreateRun(ctx context.Context, r *model.Run) error {

@@ -6,7 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/boltrunner/backend/internal/model"
+	"github.com/boltrunner/backend/internal/store"
 )
 
 // DefaultProjectID identifies memstore's seeded "Default" project. memstore has
@@ -39,4 +42,21 @@ func (s *ProjectStore) ListProjects(ctx context.Context) ([]model.Project, error
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+func (s *ProjectStore) CreateProject(ctx context.Context, p *model.Project) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Postgres enforces this with a UNIQUE constraint. memstore has to check by
+	// hand, and must agree: the API tests run against this implementation, so a
+	// missing conflict here leaves the 409 path untested where it is exercised.
+	for _, existing := range s.projects {
+		if existing.Name == p.Name {
+			return store.ErrConflict
+		}
+	}
+	p.ID = uuid.NewString()
+	p.CreatedAt = time.Now().UTC()
+	s.projects[p.ID] = *p
+	return nil
 }

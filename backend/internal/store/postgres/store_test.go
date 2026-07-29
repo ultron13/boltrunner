@@ -911,3 +911,36 @@ func TestMigrateBackfillsProjectIDForLegacyRows(t *testing.T) {
 		t.Fatalf("expected the legacy row to land in Default, got %q", projectName)
 	}
 }
+
+// uniqueProjectName keeps these tests repeatable: setupDB reuses one database,
+// so a fixed name would conflict with the row left by the previous run.
+func uniqueProjectName(prefix string) string {
+	return fmt.Sprintf("%s %d", prefix, time.Now().UnixNano())
+}
+
+func TestCreateProjectPersistsAndConflictsOnName(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	name := uniqueProjectName("Payments")
+	p := &model.Project{Name: name}
+	if err := db.CreateProject(ctx, p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if p.ID == "" || p.CreatedAt.IsZero() {
+		t.Fatalf("expected id and created_at to be populated, got %+v", p)
+	}
+
+	err := db.CreateProject(ctx, &model.Project{Name: name})
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict for a duplicate name, got %v", err)
+	}
+}
+
+func TestCreateProjectConflictsWithTheSeededDefault(t *testing.T) {
+	db := setupDB(t)
+	err := db.CreateProject(context.Background(), &model.Project{Name: "Default"})
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict for the seeded Default name, got %v", err)
+	}
+}

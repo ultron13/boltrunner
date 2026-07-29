@@ -2,7 +2,11 @@ package memstore
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/boltrunner/backend/internal/model"
+	"github.com/boltrunner/backend/internal/store"
 )
 
 func TestProjectStoreListsSeededDefault(t *testing.T) {
@@ -27,5 +31,62 @@ func TestProjectStoreListsSeededDefault(t *testing.T) {
 	}
 	if projects[0].CreatedAt.IsZero() {
 		t.Fatal("expected CreatedAt to be set")
+	}
+}
+
+func TestCreateProjectPopulatesIDAndCreatedAt(t *testing.T) {
+	s := NewProjectStore()
+	p := &model.Project{Name: "Payments"}
+	if err := s.CreateProject(context.Background(), p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if p.ID == "" {
+		t.Error("expected an id to be assigned")
+	}
+	if p.CreatedAt.IsZero() {
+		t.Error("expected CreatedAt to be set")
+	}
+}
+
+func TestCreateProjectRejectsADuplicateName(t *testing.T) {
+	s := NewProjectStore()
+	first := &model.Project{Name: "Payments"}
+	if err := s.CreateProject(context.Background(), first); err != nil {
+		t.Fatalf("first CreateProject: %v", err)
+	}
+	err := s.CreateProject(context.Background(), &model.Project{Name: "Payments"})
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict for a duplicate name, got %v", err)
+	}
+}
+
+// The seeded Default project is a row like any other: creating it again must
+// conflict, not silently produce a second "Default".
+func TestCreateProjectConflictsWithTheSeededDefault(t *testing.T) {
+	s := NewProjectStore()
+	err := s.CreateProject(context.Background(), &model.Project{Name: DefaultProjectName})
+	if !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict for the seeded name, got %v", err)
+	}
+}
+
+func TestCreateProjectAppearsInListProjects(t *testing.T) {
+	s := NewProjectStore()
+	p := &model.Project{Name: "Payments"}
+	if err := s.CreateProject(context.Background(), p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	projects, err := s.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	var found bool
+	for _, got := range projects {
+		if got.ID == p.ID && got.Name == "Payments" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("created project missing from ListProjects: %+v", projects)
 	}
 }

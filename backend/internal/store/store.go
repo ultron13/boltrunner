@@ -41,4 +41,7 @@ type RunStore interface {
 
 type ProjectStore interface {
 	ListProjects(ctx context.Context) ([]model.Project, error)
+	// CreateProject assigns p.ID and p.CreatedAt. It returns ErrConflict if a
+	// project with the same name already exists.
+	CreateProject(ctx context.Context, p *model.Project) error
 }
