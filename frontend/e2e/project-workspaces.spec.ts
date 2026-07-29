@@ -26,13 +26,15 @@ test('create a project, switch to it, and scope tests to it', async ({ page }) =
 
   // Run history follows the selection too: this fresh project has a test but no
   // runs, so its history is empty. If scoping regressed, the runs the other
-  // specs create in Default would appear here.
+  // specs create in Default would appear here. (On a genuinely fresh database
+  // with parallel workers, this spec can finish before those other specs have
+  // created any runs, so this assertion can pass vacuously on a first-ever run.)
   await page.getByRole('link', { name: 'Test Runs' }).click();
   await expect(page).toHaveURL(/\/history/);
   await expect(page.getByText('No runs yet.')).toBeVisible();
 
   await page.getByRole('link', { name: 'Dashboard' }).click();
-  await expect(page).toHaveURL(/\/$|\/\?/);
+  await expect(page).toHaveURL(/\/$/);
 
   // Switching back to Default must not show the other project's test.
   await page.getByRole('button', { name: new RegExp(project, 'i') }).click();

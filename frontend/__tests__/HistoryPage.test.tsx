@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import HistoryPage from '@/app/history/page';
 import * as api from '@/lib/api-client';
+import type { Test } from '@/lib/api-client';
 import { useSearchParams } from 'next/navigation';
 
 const push = vi.fn();
@@ -125,22 +126,75 @@ describe('HistoryPage', () => {
     await waitFor(() => expect(listTests).toHaveBeenCalledWith('p2'));
   });
 
+  it('refetches when the selected project changes after mount, and a slower unscoped response does not clobber the scoped rows', async () => {
+    projectState.selectedId = null;
+
+    // The initial (null-selection) listTests call is left pending so it can
+    // be resolved later, after the scoped call has already painted the
+    // table -- reproducing the cold-load race where the wider, unscoped
+    // fan-out finishes after the narrower, scoped one.
+    let resolveUnscoped!: (tests: Test[]) => void;
+    const unscopedTests = new Promise<Test[]>((resolve) => {
+      resolveUnscoped = resolve;
+    });
+
+    const listTests = vi.spyOn(api, 'listTests').mockImplementation(async (projectId?: string) =>
+      projectId === 'p3'
+        ? [{ id: 't3', name: 'Scoped', target_url: 'http://x', virtual_users: 1, duration_seconds: 1, created_at: '2026-07-24T00:00:00Z' }]
+        : unscopedTests
+    );
+    vi.spyOn(api, 'listRunsForTest').mockImplementation(async (testId: string) =>
+      testId === 't3'
+        ? [{ id: 'r3', test_id: 't3', status: 'completed', created_at: '2026-07-24T00:00:01Z' }]
+        : [{ id: 'r-unscoped', test_id: testId, status: 'completed', created_at: '2026-07-24T00:00:01Z' }]
+    );
+
+    const { rerender } = render(<HistoryPage />);
+    await waitFor(() => expect(listTests).toHaveBeenCalledWith(undefined));
+
+    // The workspace resolves after first paint: selectedId flips from null
+    // to a real id, the same transition useProjects() produces on a cold load.
+    projectState.selectedId = 'p3';
+    rerender(<HistoryPage />);
+    await waitFor(() => expect(listTests).toHaveBeenCalledWith('p3'));
+    await screen.findByRole('row', { name: /r3/i });
+
+    // The stale null-selection call (still pending from the first render)
+    // now resolves. It must not repaint the table with its (unscoped) results.
+    await act(async () => {
+      resolveUnscoped([
+        { id: 't1', name: 'Other', target_url: 'http://y', virtual_users: 1, duration_seconds: 1, created_at: '2026-07-24T00:00:00Z' },
+      ]);
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(screen.queryByRole('row', { name: /r-unscoped/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /r3/i })).toBeInTheDocument();
+  });
+
   // A ?testId= link is an explicit request for one test's history. It must
   // resolve whichever workspace is selected, or a bookmarked link renders blank
   // with no explanation.
   it('ignores the project filter when a testId is present', async () => {
     projectState.selectedId = 'p2';
     vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('testId=t9'));
-    const listTests = vi.spyOn(api, 'listTests').mockResolvedValue([
-      { id: 't9', name: 'Elsewhere', target_url: 'http://x', virtual_users: 1, duration_seconds: 1, created_at: '2026-07-24T00:00:00Z' },
-    ]);
+    // Argument-sensitive: t9 only comes back on the unscoped call. If the
+    // component regressed to scoping the deep link, this mock would return
+    // [] for the 'p2' call and the row assertion below would actually fail
+    // instead of passing regardless of which call was made.
+    const listTests = vi.spyOn(api, 'listTests').mockImplementation(async (projectId?: string) =>
+      projectId
+        ? []
+        : [{ id: 't9', name: 'Elsewhere', target_url: 'http://x', virtual_users: 1, duration_seconds: 1, created_at: '2026-07-24T00:00:00Z' }]
+    );
     vi.spyOn(api, 'listRunsForTest').mockResolvedValue([
       { id: 'r9', test_id: 't9', status: 'completed', created_at: '2026-07-24T00:00:01Z' },
     ]);
 
     render(<HistoryPage />);
 
-    // The run renders even though t9 is not in the selected project.
+    // The row only renders if listTests was called unscoped (see mock above),
+    // so this assertion now proves the deep-link path skips the project filter.
     expect(await screen.findByRole('row', { name: /r9/i })).toBeInTheDocument();
     expect(listTests).toHaveBeenCalledWith();
   });

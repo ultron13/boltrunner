@@ -19,6 +19,13 @@ export default function HistoryPage() {
   const { selectedId } = useProjects();
 
   useEffect(() => {
+    // selectedId starts null and resolves shortly after (useProjects fetches
+    // asynchronously), so this effect fires twice on a cold load: once
+    // unscoped, once scoped. The unscoped fan-out iterates every test in the
+    // database, so it can take longer than the scoped one and its response
+    // can land after the scoped response. Without this guard that stale,
+    // wider result would overwrite the correct scoped rows on screen.
+    let current = true;
     async function load() {
       // An explicit ?testId= is a request for one test's history and must
       // resolve whichever workspace is selected, so it skips the filter.
@@ -36,10 +43,16 @@ export default function HistoryPage() {
       const merged = perTest
         .flat()
         .sort((a, b) => (a.created_at && b.created_at ? b.created_at.localeCompare(a.created_at) : 0));
+      if (!current) return;
       setRows(merged);
       setLoaded(true);
     }
-    load().catch(() => setLoaded(true));
+    load().catch(() => {
+      if (current) setLoaded(true);
+    });
+    return () => {
+      current = false;
+    };
   }, [testId, selectedId]);
 
   const columns: Column<HistoryRow>[] = [
