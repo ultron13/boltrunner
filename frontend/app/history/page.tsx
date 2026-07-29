@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { listTests, listRunsForTest, Run, Test } from '@/lib/api-client';
 import { DataTable, Column } from '@/components/ui/DataTable';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { useProjects } from '@/components/ui/ProjectProvider';
 
 type HistoryRow = Run & { testName: string };
 
@@ -15,10 +16,13 @@ export default function HistoryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const testId = searchParams.get('testId');
+  const { selectedId } = useProjects();
 
   useEffect(() => {
     async function load() {
-      const tests: Test[] = await listTests();
+      // An explicit ?testId= is a request for one test's history and must
+      // resolve whichever workspace is selected, so it skips the filter.
+      const tests: Test[] = testId ? await listTests() : await listTests(selectedId ?? undefined);
       const filtered = testId ? tests.filter((t) => t.id === testId) : tests;
       const settled = await Promise.allSettled(
         filtered.map(async (t) => {
@@ -36,7 +40,7 @@ export default function HistoryPage() {
       setLoaded(true);
     }
     load().catch(() => setLoaded(true));
-  }, [testId]);
+  }, [testId, selectedId]);
 
   const columns: Column<HistoryRow>[] = [
     { key: 'testName', header: 'Test' },

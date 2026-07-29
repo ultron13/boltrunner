@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import HistoryPage from '@/app/history/page';
 import * as api from '@/lib/api-client';
 import { useSearchParams } from 'next/navigation';
@@ -10,9 +10,22 @@ vi.mock('next/navigation', () => ({
   useSearchParams: vi.fn(() => new URLSearchParams()),
 }));
 
+const projectState = vi.hoisted(() => ({ selectedId: null as string | null }));
+
+vi.mock('@/components/ui/ProjectProvider', () => ({
+  useProjects: () => ({
+    projects: [],
+    selectedId: projectState.selectedId,
+    selected: null,
+    select: vi.fn(),
+    create: vi.fn(),
+  }),
+}));
+
 describe('HistoryPage', () => {
   afterEach(() => {
     vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
+    projectState.selectedId = null;
     vi.restoreAllMocks();
   });
 
@@ -101,5 +114,34 @@ describe('HistoryPage', () => {
 
     const rows = await screen.findAllByRole('row');
     expect(rows).toHaveLength(3); // header + r1 + r2, no crash from the missing created_at
+  });
+
+  it('scopes the fetch to the selected project when browsing', async () => {
+    projectState.selectedId = 'p2';
+    const listTests = vi.spyOn(api, 'listTests').mockResolvedValue([]);
+
+    render(<HistoryPage />);
+
+    await waitFor(() => expect(listTests).toHaveBeenCalledWith('p2'));
+  });
+
+  // A ?testId= link is an explicit request for one test's history. It must
+  // resolve whichever workspace is selected, or a bookmarked link renders blank
+  // with no explanation.
+  it('ignores the project filter when a testId is present', async () => {
+    projectState.selectedId = 'p2';
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('testId=t9'));
+    const listTests = vi.spyOn(api, 'listTests').mockResolvedValue([
+      { id: 't9', name: 'Elsewhere', target_url: 'http://x', virtual_users: 1, duration_seconds: 1, created_at: '2026-07-24T00:00:00Z' },
+    ]);
+    vi.spyOn(api, 'listRunsForTest').mockResolvedValue([
+      { id: 'r9', test_id: 't9', status: 'completed', created_at: '2026-07-24T00:00:01Z' },
+    ]);
+
+    render(<HistoryPage />);
+
+    // The run renders even though t9 is not in the selected project.
+    expect(await screen.findByRole('row', { name: /r9/i })).toBeInTheDocument();
+    expect(listTests).toHaveBeenCalledWith();
   });
 });
