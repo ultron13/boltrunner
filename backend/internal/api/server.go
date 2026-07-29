@@ -31,6 +31,7 @@ func NewServer(testStore store.TestStore, runStore store.RunStore, projectStore 
 	s.router.Use(corsMiddleware)
 	s.router.Get("/healthz", s.handleHealthz)
 	s.router.Get("/api/projects", s.handleListProjects)
+	s.router.Post("/api/projects", s.handleCreateProject)
 	s.router.Post("/api/tests", s.handleCreateTest)
 	s.router.Get("/api/tests", s.handleListTests)
 	s.router.Put("/api/tests/{testID}", s.handleUpdateTest)
