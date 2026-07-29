@@ -5,16 +5,20 @@ import { useRouter } from 'next/navigation';
 import { listTests, startRun, Test } from '@/lib/api-client';
 import { CreateTestForm } from '@/components/CreateTestForm';
 import { TestList } from '@/components/TestList';
+import { useProjects } from '@/components/ui/ProjectProvider';
 
 export function TestManagementPanel({ onTestCreated }: { onTestCreated?: (test: Test) => void } = {}) {
   const [tests, setTests] = useState<Test[]>([]);
+  const { selectedId } = useProjects();
   const router = useRouter();
 
+  // This panel owns the visible test table, so it has to follow the selection
+  // itself -- Shell's list feeds the tree nav, not this one.
   useEffect(() => {
-    listTests()
+    listTests(selectedId ?? undefined)
       .then(setTests)
       .catch(() => setTests([]));
-  }, []);
+  }, [selectedId]);
 
   async function handleStart(testId: string) {
     const run = await startRun(testId);

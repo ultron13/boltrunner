@@ -4,13 +4,16 @@ import { useEffect, useState } from 'react';
 import { listTests, listRunsForTest, Test } from '@/lib/api-client';
 import { TestManagementPanel } from '@/components/TestManagementPanel';
 import { KpiTile } from '@/components/ui/KpiTile';
+import { useProjects } from '@/components/ui/ProjectProvider';
 
 export default function DashboardPage() {
   const [tests, setTests] = useState<Test[]>([]);
   const [activeRuns, setActiveRuns] = useState(0);
+  const { selectedId } = useProjects();
 
+  // The KPIs describe the selected workspace, so they follow the selection too.
   useEffect(() => {
-    listTests()
+    listTests(selectedId ?? undefined)
       .then((fetched) => {
         setTests(fetched);
         Promise.all(fetched.map((t) => listRunsForTest(t.id)))
@@ -26,7 +29,7 @@ export default function DashboardPage() {
         setTests([]);
         setActiveRuns(0);
       });
-  }, []);
+  }, [selectedId]);
 
   function handleTestCreated(t: Test) {
     setTests((prev) => [t, ...prev]);
