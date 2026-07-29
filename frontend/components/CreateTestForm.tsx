@@ -3,8 +3,10 @@
 import { useState, FormEvent } from 'react';
 import { createTest, Test } from '@/lib/api-client';
 import { TestFields, TestField } from '@/components/TestFields';
+import { useProjects } from '@/components/ui/ProjectProvider';
 
 export function CreateTestForm({ onCreated }: { onCreated: (test: Test) => void }) {
+  const { selectedId } = useProjects();
   const [name, setName] = useState('');
   const [targetUrl, setTargetUrl] = useState('');
   const [virtualUsers, setVirtualUsers] = useState('10');
@@ -29,6 +31,9 @@ export function CreateTestForm({ onCreated }: { onCreated: (test: Test) => void 
         target_url: targetUrl,
         virtual_users: Number(virtualUsers),
         duration_seconds: Number(durationSeconds),
+        // Omitted when nothing is selected: the backend then COALESCEs to the
+        // Default project.
+        ...(selectedId ? { project_id: selectedId } : {}),
       });
       onCreated(test);
       setName('');

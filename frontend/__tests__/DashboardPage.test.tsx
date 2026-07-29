@@ -3,6 +3,20 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DashboardPage from '@/app/page';
 import * as api from '@/lib/api-client';
 
+// These cases predate project scoping and do not exercise it; stubbing the hook
+// keeps them focused on their own component. ProjectProvider's own behavior is
+// covered by ProjectProvider.test.tsx, and the wiring by ProjectScoping.test.tsx.
+vi.mock('@/components/ui/ProjectProvider', () => ({
+  useProjects: () => ({
+    projects: [],
+    selectedId: null,
+    selected: null,
+    select: vi.fn(),
+    create: vi.fn(),
+  }),
+}));
+
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));

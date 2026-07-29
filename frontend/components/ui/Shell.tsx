@@ -2,7 +2,8 @@
 
 import { ReactNode, useEffect, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { listProjects, listTests, Test } from '@/lib/api-client';
+import { listTests, Test } from '@/lib/api-client';
+import { useProjects } from '@/components/ui/ProjectProvider';
 import { TopNav } from '@/components/ui/TopNav';
 import { TreeNav } from '@/components/ui/TreeNav';
 import { BottomTabBar } from '@/components/ui/BottomTabBar';
@@ -44,22 +45,19 @@ function breadcrumbFor(
 
 export function Shell({ children }: { children: ReactNode }) {
   const [tests, setTests] = useState<Test[]>([]);
-  const [projectName, setProjectName] = useState('Default');
+  const { selectedId, selected } = useProjects();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const testId = searchParams.get('testId');
+  // A projects-endpoint failure leaves nothing selected, which degrades to the
+  // literal "Default" rather than an empty label.
+  const projectName = selected?.name ?? 'Default';
 
   useEffect(() => {
-    listTests().then(setTests).catch(() => setTests([]));
-  }, []);
-
-  useEffect(() => {
-    // A projects-endpoint failure degrades to the literal "Default" rather
-    // than an empty switcher.
-    listProjects()
-      .then((projects) => setProjectName(projects[0]?.name ?? 'Default'))
-      .catch(() => {});
-  }, []);
+    listTests(selectedId ?? undefined)
+      .then(setTests)
+      .catch(() => setTests([]));
+  }, [selectedId]);
 
   const detailTestId = pathname.startsWith('/tests/') ? pathname.split('/')[2] : null;
   const activeTestId = testId ?? detailTestId;
@@ -68,7 +66,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-surface-alt text-text">
-      <TopNav modules={MODULES} projectName={projectName} />
+      <TopNav modules={MODULES} />
       <div className="flex flex-1">
         <div className="hidden md:block">
           <TreeNav tests={tests} activeTestId={activeTestId ?? undefined} projectName={projectName} />
