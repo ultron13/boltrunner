@@ -58,6 +58,8 @@ export type CreateTestInput = {
   target_url: string;
   virtual_users: number;
   duration_seconds: number;
+  // Optional: the backend COALESCEs a missing value to the Default project.
+  project_id?: string;
 };
 
 export type UpdateTestInput = CreateTestInput;
@@ -77,8 +79,11 @@ async function unwrap<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function listTests(): Promise<Test[]> {
-  const tests = await unwrap<Test[]>(await fetch(`${API_URL}/api/tests`, { cache: 'no-store' }));
+export async function listTests(projectId?: string): Promise<Test[]> {
+  const url = projectId
+    ? `${API_URL}/api/tests?project_id=${encodeURIComponent(projectId)}`
+    : `${API_URL}/api/tests`;
+  const tests = await unwrap<Test[]>(await fetch(url, { cache: 'no-store' }));
   return tests ?? [];
 }
 
@@ -125,6 +130,16 @@ export async function updateTest(testId: string, input: UpdateTestInput): Promis
 export async function listProjects(): Promise<Project[]> {
   const projects = await unwrap<Project[]>(await fetch(`${API_URL}/api/projects`, { cache: 'no-store' }));
   return projects ?? [];
+}
+
+export async function createProject(name: string): Promise<Project> {
+  return unwrap(
+    await fetch(`${API_URL}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+  );
 }
 
 export async function cancelRun(runId: string): Promise<void> {

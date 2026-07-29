@@ -9,6 +9,7 @@ import {
   listTestVersions,
   updateTest,
   listProjects,
+  createProject,
   ApiError,
 } from '@/lib/api-client';
 
@@ -216,5 +217,49 @@ describe('listProjects', () => {
   it('defaults to an empty array if the API returns null', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => null }) as unknown as typeof fetch;
     await expect(listProjects()).resolves.toEqual([]);
+  });
+});
+
+describe('createProject', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('POSTs the name and returns the created project', async () => {
+    const created = { id: 'p2', name: 'Payments', created_at: '2026-07-29T00:00:00Z' };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => created }) as unknown as typeof fetch;
+
+    await expect(createProject('Payments')).resolves.toEqual(created);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/projects'),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: 'Payments' }) })
+    );
+  });
+
+  it('throws an ApiError with status 409 for a duplicate name', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: async () => 'a project with that name already exists',
+    }) as unknown as typeof fetch;
+    await expect(createProject('Payments')).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe('listTests project scoping', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('appends project_id when given one', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => [] }) as unknown as typeof fetch;
+    await listTests('p2');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/tests?project_id=p2'),
+      expect.objectContaining({ cache: 'no-store' })
+    );
+  });
+
+  it('omits the parameter entirely when given none', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => [] }) as unknown as typeof fetch;
+    await listTests();
+    const url = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).not.toContain('project_id');
   });
 });
