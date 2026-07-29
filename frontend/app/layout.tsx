@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Suspense } from "react";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ui/theme";
+import { ProjectProvider } from "@/components/ui/ProjectProvider";
 import { Shell } from "@/components/ui/Shell";
 
 const geistSans = localFont({
@@ -44,9 +45,11 @@ export default function RootLayout({
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider>
-          <Suspense fallback={null}>
-            <Shell>{children}</Shell>
-          </Suspense>
+          <ProjectProvider>
+            <Suspense fallback={null}>
+              <Shell>{children}</Shell>
+            </Suspense>
+          </ProjectProvider>
         </ThemeProvider>
       </body>
     </html>
