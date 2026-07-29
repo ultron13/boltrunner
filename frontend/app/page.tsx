@@ -12,23 +12,37 @@ export default function DashboardPage() {
   const { selectedId } = useProjects();
 
   // The KPIs describe the selected workspace, so they follow the selection too.
+  //
+  // selectedId starts null and resolves shortly after, so this fires twice on a
+  // cold load: once unscoped over every test in the database, once scoped. The
+  // unscoped pass is the slower of the two -- it fans out over every test in
+  // every project -- so its response can land second and report another
+  // workspace's counts. The guard covers the inner run fan-out as well, which
+  // resolves later still and would otherwise overwrite Active Runs on its own.
   useEffect(() => {
+    let current = true;
     listTests(selectedId ?? undefined)
       .then((fetched) => {
+        if (!current) return;
         setTests(fetched);
         Promise.all(fetched.map((t) => listRunsForTest(t.id)))
           .then((runLists) => {
+            if (!current) return;
             const running = runLists.flat().filter((r) => r.status === 'running').length;
             setActiveRuns(running);
           })
           .catch(() => {
-            setActiveRuns(0);
+            if (current) setActiveRuns(0);
           });
       })
       .catch(() => {
+        if (!current) return;
         setTests([]);
         setActiveRuns(0);
       });
+    return () => {
+      current = false;
+    };
   }, [selectedId]);
 
   function handleTestCreated(t: Test) {

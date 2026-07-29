@@ -14,10 +14,23 @@ export function TestManagementPanel({ onTestCreated }: { onTestCreated?: (test: 
 
   // This panel owns the visible test table, so it has to follow the selection
   // itself -- Shell's list feeds the tree nav, not this one.
+  //
+  // selectedId starts null and resolves shortly after, so this fires twice on a
+  // cold load: once unscoped over every test in the database, once scoped. The
+  // unscoped response can land second and repaint the table with another
+  // workspace's tests, and nothing refetches to correct it.
   useEffect(() => {
+    let current = true;
     listTests(selectedId ?? undefined)
-      .then(setTests)
-      .catch(() => setTests([]));
+      .then((fetched) => {
+        if (current) setTests(fetched);
+      })
+      .catch(() => {
+        if (current) setTests([]);
+      });
+    return () => {
+      current = false;
+    };
   }, [selectedId]);
 
   async function handleStart(testId: string) {

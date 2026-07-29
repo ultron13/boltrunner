@@ -53,10 +53,22 @@ export function Shell({ children }: { children: ReactNode }) {
   // literal "Default" rather than an empty label.
   const projectName = selected?.name ?? 'Default';
 
+  // selectedId starts null and resolves shortly after, so this fires twice on a
+  // cold load: once unscoped over every test in the database, once scoped. The
+  // unscoped response can land second and leave the tree nav listing another
+  // workspace's tests, and nothing refetches to correct it.
   useEffect(() => {
+    let current = true;
     listTests(selectedId ?? undefined)
-      .then(setTests)
-      .catch(() => setTests([]));
+      .then((fetched) => {
+        if (current) setTests(fetched);
+      })
+      .catch(() => {
+        if (current) setTests([]);
+      });
+    return () => {
+      current = false;
+    };
   }, [selectedId]);
 
   const detailTestId = pathname.startsWith('/tests/') ? pathname.split('/')[2] : null;
