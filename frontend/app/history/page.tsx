@@ -16,7 +16,7 @@ export default function HistoryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const testId = searchParams.get('testId');
-  const { selectedId } = useProjects();
+  const { selectedId, selected } = useProjects();
 
   useEffect(() => {
     // selectedId starts null and resolves shortly after (useProjects fetches
@@ -68,6 +68,14 @@ export default function HistoryPage() {
 
   if (!loaded) return <p>Loading…</p>;
 
+  // Naming the workspace tells an empty list apart from a broken one. It is
+  // only honest when the list is actually scoped to that workspace: a ?testId=
+  // list deliberately is not, and the linked test may belong to another one, so
+  // that case keeps the generic wording. So does a null selection, which means
+  // the unscoped list is being shown.
+  const emptyMessage =
+    !testId && selected ? `No runs in ${selected.name} yet.` : 'No runs yet.';
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold text-text">Test Runs</h1>
@@ -76,7 +84,7 @@ export default function HistoryPage() {
         rows={rows}
         rowKey={(r) => r.id}
         onRowClick={(r) => router.push(`/runs/${r.id}`)}
-        emptyMessage="No runs yet."
+        emptyMessage={emptyMessage}
       />
     </div>
   );

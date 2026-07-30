@@ -11,13 +11,16 @@ vi.mock('next/navigation', () => ({
   useSearchParams: vi.fn(() => new URLSearchParams()),
 }));
 
-const projectState = vi.hoisted(() => ({ selectedId: null as string | null }));
+const projectState = vi.hoisted(() => ({
+  selectedId: null as string | null,
+  selected: null as { id: string; name: string; created_at: string } | null,
+}));
 
 vi.mock('@/components/ui/ProjectProvider', () => ({
   useProjects: () => ({
     projects: [],
     selectedId: projectState.selectedId,
-    selected: null,
+    selected: projectState.selected,
     select: vi.fn(),
     create: vi.fn(),
   }),
@@ -27,6 +30,7 @@ describe('HistoryPage', () => {
   afterEach(() => {
     vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams());
     projectState.selectedId = null;
+    projectState.selected = null;
     vi.restoreAllMocks();
   });
 
@@ -64,6 +68,32 @@ describe('HistoryPage', () => {
     vi.spyOn(api, 'listTests').mockResolvedValue([]);
     render(<HistoryPage />);
     expect(await screen.findByText('No runs yet.')).toBeInTheDocument();
+  });
+
+  // An empty list and a broken fetch look identical without this, and the user
+  // cannot tell which workspace they are looking at from the table alone.
+  it('names the selected workspace in the empty message', async () => {
+    projectState.selectedId = 'p2';
+    projectState.selected = { id: 'p2', name: 'Payments', created_at: '2026-07-29T00:00:00Z' };
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+
+    render(<HistoryPage />);
+
+    expect(await screen.findByText('No runs in Payments yet.')).toBeInTheDocument();
+  });
+
+  // A ?testId= list is deliberately unscoped, so the linked test may belong to
+  // another workspace. Naming the selected one there would be false.
+  it('keeps the generic empty message on a testId deep link', async () => {
+    projectState.selectedId = 'p2';
+    projectState.selected = { id: 'p2', name: 'Payments', created_at: '2026-07-29T00:00:00Z' };
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('testId=t-elsewhere'));
+    vi.spyOn(api, 'listTests').mockResolvedValue([]);
+
+    render(<HistoryPage />);
+
+    expect(await screen.findByText('No runs yet.')).toBeInTheDocument();
+    expect(screen.queryByText(/No runs in Payments yet\./)).not.toBeInTheDocument();
   });
 
   it('filters to a single test when a testId query param is present', async () => {

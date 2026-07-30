@@ -31,7 +31,9 @@ test('create a project, switch to it, and scope tests to it', async ({ page }) =
   // created any runs, so this assertion can pass vacuously on a first-ever run.)
   await page.getByRole('link', { name: 'Test Runs' }).click();
   await expect(page).toHaveURL(/\/history/);
-  await expect(page.getByText('No runs yet.')).toBeVisible();
+  // The empty state names the workspace, which also proves the page knows which
+  // one it is scoped to rather than just happening to be empty.
+  await expect(page.getByText(`No runs in ${project} yet.`)).toBeVisible();
 
   await page.getByRole('link', { name: 'Dashboard' }).click();
   await expect(page).toHaveURL(/\/$/);
