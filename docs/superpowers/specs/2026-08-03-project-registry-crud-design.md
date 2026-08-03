@@ -96,16 +96,54 @@ destination project is unresolvable there. This is a prerequisite, not a nice-to
 
 ```sql
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false;
-UPDATE projects SET is_default = true WHERE name = 'Default';
+
 CREATE UNIQUE INDEX IF NOT EXISTS projects_one_default ON projects (is_default) WHERE is_default;
+
+-- 0003 seeds 'Default', so an empty projects table should be unreachable. Seeding
+-- anyway costs one statement and removes the failure mode outright: with no flagged
+-- row, CreateTest's COALESCE yields NULL against a NOT NULL column, and every
+-- project-less test creation starts failing.
+INSERT INTO projects (name, is_default)
+SELECT 'Default', true WHERE NOT EXISTS (SELECT 1 FROM projects);
+
+-- Flag the project named 'Default' when there is one, else the oldest, else any --
+-- rather than matching on the name alone, which silently flags nothing if the row
+-- was ever renamed by hand. The NOT EXISTS guard makes a re-run a no-op instead of
+-- a unique violation against the index above.
+UPDATE projects SET is_default = true
+WHERE id = (
+    SELECT id FROM projects
+    ORDER BY (name = 'Default') DESC, created_at ASC, id ASC
+    LIMIT 1
+)
+AND NOT EXISTS (SELECT 1 FROM projects WHERE is_default);
 ```
 
 The partial index makes "exactly one default project" a database invariant rather than a
 convention: the index covers only rows where `is_default` is true, and every such row indexes
 the same value, so a second one collides.
 
-Migration `0003` seeds the `Default` row and no delete endpoint has ever existed, so the backfill
-always finds exactly one row to flag.
+The `ORDER BY ... LIMIT 1` form is deliberate over the obvious `WHERE name = 'Default'`. The
+spec's first draft assumed exactly one row carries that name — true of any database this code
+has produced, since `0003` seeds it and no delete endpoint has ever existed. But the assumption
+is unverifiable at migration time and fails silently if it is ever wrong: nothing gets flagged,
+the migration reports success, and test creation breaks later at a place that gives no hint why.
+Falling back to the oldest project makes the migration total.
+
+### Migrating the deployed database
+
+A live cluster (`kubectl -n boltrunner`) is running a backend image built 2026-07-24, before
+`0003` and `0004` existed. Its database is still on the `0001`/`0002` schema — no
+`schema_migrations`, no `projects`, and `tests` in its flat six-column form — holding 8 tests,
+8 runs and 112 metric snapshots of real data.
+
+So `0005` will not arrive on a database that already has projects. The first startup of a
+current image runs `0003`, `0004` and `0005` back to back against nine days of pre-migration
+rows. CI only ever exercises the chain from empty, which is the easy case: `0004`'s backfill of
+`catalog_id` and `0005`'s flagging both have real rows to act on here and none there.
+
+This is a pre-existing gap that this slice inherits rather than creates, but `0005` is the
+migration that makes it worth closing — see the testing strategy.
 
 ### Model — `backend/internal/model/model.go`
 
@@ -254,8 +292,21 @@ makes the effect visible and remounts the scoped list.
 **Backend.** Store-level tests for rename, delete and move against both memstore and postgres,
 including: rename to a taken name, delete of the default project, move of a multi-version family
 (assert every version moved), and move to a nonexistent project. API tests covering every row of
-the error-handling table. A migration test asserting `0005` leaves exactly one project flagged
-and that a second flagged row is rejected. The 88% backend coverage gate holds.
+the error-handling table. The 88% backend coverage gate holds.
+
+**Migrations.** Three cases against a real Postgres, in `postgres_test.go`'s existing
+`BOLTRUNNER_TEST_DSN` style:
+
+1. From empty — the chain `0001…0005` leaves exactly one project flagged.
+2. Idempotence — running `0005` twice leaves exactly one flagged row rather than raising a
+   unique violation against `projects_one_default`.
+3. **From the `0002` schema with data** — build the pre-migration tables by hand, insert a test
+   and a run, then migrate and assert the test survived with a `catalog_id`, `version = 1` and
+   the flagged project. This is the case the deployed database will actually take, and the one
+   CI has never run.
+
+A fourth case, a projects table with no row named `Default`, asserts the oldest project is
+flagged rather than none.
 
 **Frontend.** `api-client` tests for the three new calls. `ProjectProvider` tests for `rename`
 and `remove`, including removing the *currently selected* project and asserting the fallback and
