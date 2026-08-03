@@ -29,7 +29,7 @@ type ProjectStore struct {
 
 func NewProjectStore() *ProjectStore {
 	return &ProjectStore{projects: map[string]model.Project{
-		DefaultProjectID: {ID: DefaultProjectID, Name: DefaultProjectName, CreatedAt: time.Now().UTC()},
+		DefaultProjectID: {ID: DefaultProjectID, Name: DefaultProjectName, CreatedAt: time.Now().UTC(), IsDefault: true},
 	}}
 }
 

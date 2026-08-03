@@ -29,6 +29,9 @@ type Project struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+	// IsDefault marks the project that an omitted project_id falls back to.
+	// Exactly one project carries it, enforced by a partial unique index.
+	IsDefault bool `json:"is_default"`
 }
 
 type Run struct {

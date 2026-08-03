@@ -196,7 +196,7 @@ func (db *DB) CreateTest(ctx context.Context, t *model.Test) error {
 	err := db.Pool.QueryRow(ctx,
 		`INSERT INTO tests (id, catalog_id, version, name, target_url, virtual_users, duration_seconds, project_id)
 		 VALUES ($1, $1, 1, $2, $3, $4, $5,
-		         COALESCE($6, (SELECT id FROM projects WHERE name = 'Default')))
+		         COALESCE($6, (SELECT id FROM projects WHERE is_default)))
 		 RETURNING catalog_id, id, version, project_id, created_at, created_at`,
 		id, t.Name, t.TargetURL, t.VirtualUsers, t.DurationSeconds, nullableUUID(t.ProjectID),
 	).Scan(&t.ID, &t.VersionID, &t.Version, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt)
@@ -331,7 +331,7 @@ func (db *DB) updateTestAtVersion(ctx context.Context, t *model.Test, version in
 }
 
 func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
-	rows, err := db.Pool.Query(ctx, `SELECT id, name, created_at FROM projects ORDER BY name ASC`)
+	rows, err := db.Pool.Query(ctx, `SELECT id, name, created_at, is_default FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +339,7 @@ func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 	out := []model.Project{}
 	for rows.Next() {
 		var p model.Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt, &p.IsDefault); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -349,9 +349,9 @@ func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 
 func (db *DB) CreateProject(ctx context.Context, p *model.Project) error {
 	err := db.Pool.QueryRow(ctx,
-		`INSERT INTO projects (name) VALUES ($1) RETURNING id, created_at`,
+		`INSERT INTO projects (name) VALUES ($1) RETURNING id, created_at, is_default`,
 		p.Name,
-	).Scan(&p.ID, &p.CreatedAt)
+	).Scan(&p.ID, &p.CreatedAt, &p.IsDefault)
 	if isUniqueViolation(err) {
 		return store.ErrConflict
 	}
