@@ -37,6 +37,11 @@ type TestStore interface {
 	UpdateTest(ctx context.Context, t *model.Test) error
 	// ListTestVersions returns every version of a test, newest first.
 	ListTestVersions(ctx context.Context, catalogID string) ([]model.Test, error)
+	// MoveTest refiles every version of catalogID under projectID. A project is
+	// where a test is filed, not part of what a run executed, so moving does not
+	// cut a new version. ErrNotFound if no such test; ErrInvalidReference if the
+	// project does not exist.
+	MoveTest(ctx context.Context, catalogID, projectID string) error
 }
 
 type RunStore interface {

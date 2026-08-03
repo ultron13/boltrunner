@@ -18,10 +18,15 @@ import (
 type TestStore struct {
 	mu    sync.RWMutex
 	tests map[string]model.Test
+	// projects validates project references. The dependency runs one way only
+	// -- ProjectStore never calls back into TestStore -- which is what lets the
+	// emptiness check for a delete live in the handler instead of here, and
+	// what makes holding s.mu across a projects call safe.
+	projects *ProjectStore
 }
 
-func NewTestStore() *TestStore {
-	return &TestStore{tests: make(map[string]model.Test)}
+func NewTestStore(projects *ProjectStore) *TestStore {
+	return &TestStore{tests: make(map[string]model.Test), projects: projects}
 }
 
 func (s *TestStore) CreateTest(ctx context.Context, t *model.Test) error {
@@ -29,11 +34,10 @@ func (s *TestStore) CreateTest(ctx context.Context, t *model.Test) error {
 	defer s.mu.Unlock()
 	if t.ProjectID == "" {
 		t.ProjectID = DefaultProjectID
-	} else if t.ProjectID != DefaultProjectID {
-		// memstore has no project registry beyond the seeded Default, so no
-		// other id is resolvable here. postgres enforces the same contract via
-		// the tests.project_id foreign key, so both backends reject an unknown
-		// project rather than one silently storing it.
+	} else if !s.projects.exists(t.ProjectID) {
+		// postgres enforces the same contract via the tests.project_id foreign
+		// key, so both backends reject an unknown project rather than one
+		// silently storing it.
 		return store.ErrInvalidReference
 	}
 	now := time.Now().UTC()
@@ -157,4 +161,25 @@ func (s *TestStore) familyCreatedAt(catalogID string) time.Time {
 		}
 	}
 	return earliest
+}
+
+func (s *TestStore) MoveTest(ctx context.Context, catalogID, projectID string) error {
+	if !s.projects.exists(projectID) {
+		return store.ErrInvalidReference
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	moved := false
+	for versionID, t := range s.tests {
+		if t.ID != catalogID {
+			continue
+		}
+		t.ProjectID = projectID
+		s.tests[versionID] = t
+		moved = true
+	}
+	if !moved {
+		return store.ErrNotFound
+	}
+	return nil
 }

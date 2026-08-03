@@ -1169,3 +1169,82 @@ func TestPostgresDeleteProjectNotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestPostgresMoveTestMovesEveryVersion(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	dest := &model.Project{Name: "Dest " + uuid.NewString()}
+	if err := db.CreateProject(ctx, dest); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	tst := &model.Test{Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	edit := &model.Test{ID: tst.ID, Name: "smoke v2", TargetURL: "http://x", VirtualUsers: 2, DurationSeconds: 1}
+	if err := db.UpdateTest(ctx, edit); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+
+	if err := db.MoveTest(ctx, tst.ID, dest.ID); err != nil {
+		t.Fatalf("MoveTest: %v", err)
+	}
+
+	versions, err := db.ListTestVersions(ctx, tst.ID)
+	if err != nil {
+		t.Fatalf("ListTestVersions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(versions))
+	}
+	for _, v := range versions {
+		if v.ProjectID != dest.ID {
+			t.Fatalf("version %d stayed in %q", v.Version, v.ProjectID)
+		}
+	}
+
+	// And it is now listed under the destination rather than where it started.
+	inDest, err := db.ListTestsForProject(ctx, dest.ID)
+	if err != nil {
+		t.Fatalf("ListTestsForProject: %v", err)
+	}
+	found := false
+	for _, l := range inDest {
+		if l.ID == tst.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected the moved test to be listed in the destination project")
+	}
+}
+
+func TestPostgresMoveTestUnknownTest(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	var defaultID string
+	db.Pool.QueryRow(ctx, `SELECT id FROM projects WHERE is_default`).Scan(&defaultID)
+	if err := db.MoveTest(ctx, uuid.NewString(), defaultID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestPostgresMoveTestUnknownProject(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	tst := &model.Test{Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	db.CreateTest(ctx, tst)
+	if err := db.MoveTest(ctx, tst.ID, uuid.NewString()); !errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("expected ErrInvalidReference, got %v", err)
+	}
+}
+
+func TestPostgresMoveTestMalformedProjectID(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	tst := &model.Test{Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	db.CreateTest(ctx, tst)
+	if err := db.MoveTest(ctx, tst.ID, "not-a-uuid"); !errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("expected ErrInvalidReference, got %v", err)
+	}
+}

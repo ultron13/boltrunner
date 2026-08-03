@@ -80,6 +80,17 @@ func (s *ProjectStore) RenameProject(ctx context.Context, id, name string) (*mod
 	return &p, nil
 }
 
+// exists reports whether id names a registered project. TestStore calls it to
+// validate a project reference. The dependency is deliberately one-way --
+// ProjectStore never calls into TestStore -- so holding TestStore.mu across
+// this call cannot deadlock.
+func (s *ProjectStore) exists(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.projects[id]
+	return ok
+}
+
 func (s *ProjectStore) DeleteProject(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

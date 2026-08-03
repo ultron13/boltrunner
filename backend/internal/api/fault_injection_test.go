@@ -126,7 +126,7 @@ func newServerWithStores(ts store.TestStore, rs store.RunStore, k8sClient *k8sfa
 // --- handleStartRun error branches ---
 
 func TestStartRunGetTestStoreError(t *testing.T) {
-	ts := &faultyTestStore{TestStore: memstore.NewTestStore(), getErr: errBoom}
+	ts := &faultyTestStore{TestStore: memstore.NewTestStore(memstore.NewProjectStore()), getErr: errBoom}
 	rs := memstore.NewRunStore()
 	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
 
@@ -140,7 +140,7 @@ func TestStartRunGetTestStoreError(t *testing.T) {
 }
 
 func TestStartRunCreateRunError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
 	_ = ts.CreateTest(context.Background(), test)
 	rs := &faultyRunStore{RunStore: memstore.NewRunStore(), createErr: errBoom}
@@ -156,7 +156,7 @@ func TestStartRunCreateRunError(t *testing.T) {
 }
 
 func TestStartRunInvalidTargetURLFailsPlanGeneration(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	test := &model.Test{Name: "smoke", TargetURL: "not-a-url", VirtualUsers: 5, DurationSeconds: 10}
 	_ = ts.CreateTest(context.Background(), test)
 	rs := memstore.NewRunStore()
@@ -177,7 +177,7 @@ func TestStartRunInvalidTargetURLFailsPlanGeneration(t *testing.T) {
 }
 
 func TestStartRunConfigMapCreateError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
 	_ = ts.CreateTest(context.Background(), test)
 	rs := memstore.NewRunStore()
@@ -197,7 +197,7 @@ func TestStartRunConfigMapCreateError(t *testing.T) {
 }
 
 func TestStartRunJobCreateError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
 	_ = ts.CreateTest(context.Background(), test)
 	rs := memstore.NewRunStore()
@@ -230,7 +230,7 @@ func TestPostMetricsInvalidBody(t *testing.T) {
 }
 
 func TestPostMetricsStoreError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	rs := &faultyRunStore{RunStore: memstore.NewRunStore(), appendErr: errBoom}
 	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
 
@@ -247,7 +247,7 @@ func TestPostMetricsStoreError(t *testing.T) {
 // --- handleGetRun error branches ---
 
 func TestGetRunStoreError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	rs := &faultyRunStore{RunStore: memstore.NewRunStore(), getErr: errBoom}
 	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
 
@@ -261,7 +261,7 @@ func TestGetRunStoreError(t *testing.T) {
 }
 
 func TestGetRunListSnapshotsError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	realRS := memstore.NewRunStore()
 	run := &model.Run{TestID: "t1", Status: model.RunRunning}
 	_ = realRS.CreateRun(context.Background(), run)
@@ -280,7 +280,7 @@ func TestGetRunListSnapshotsError(t *testing.T) {
 // --- handleCancelRun error branches ---
 
 func TestCancelRunJobDeleteError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	rs := memstore.NewRunStore()
 	run := &model.Run{TestID: "t1", Status: model.RunRunning}
 	_ = rs.CreateRun(context.Background(), run)
@@ -300,7 +300,7 @@ func TestCancelRunJobDeleteError(t *testing.T) {
 }
 
 func TestCancelRunUpdateStatusError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	realRS := memstore.NewRunStore()
 	run := &model.Run{TestID: "t1", Status: model.RunRunning}
 	_ = realRS.CreateRun(context.Background(), run)
@@ -319,7 +319,7 @@ func TestCancelRunUpdateStatusError(t *testing.T) {
 // --- handleListRunsForTest error branches ---
 
 func TestListRunsForTestGetTestStoreError(t *testing.T) {
-	ts := &faultyTestStore{TestStore: memstore.NewTestStore(), getErr: errBoom}
+	ts := &faultyTestStore{TestStore: memstore.NewTestStore(memstore.NewProjectStore()), getErr: errBoom}
 	rs := memstore.NewRunStore()
 	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
 
@@ -333,7 +333,7 @@ func TestListRunsForTestGetTestStoreError(t *testing.T) {
 }
 
 func TestListRunsForTestListByTestError(t *testing.T) {
-	ts := memstore.NewTestStore()
+	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
 	_ = ts.CreateTest(context.Background(), test)
 	rs := &faultyRunStore{RunStore: memstore.NewRunStore(), listErr: errBoom}
@@ -374,7 +374,7 @@ func TestCreateTestMissingFields(t *testing.T) {
 }
 
 func TestCreateTestStoreError(t *testing.T) {
-	ts := &faultyTestStore{TestStore: memstore.NewTestStore(), createErr: errBoom}
+	ts := &faultyTestStore{TestStore: memstore.NewTestStore(memstore.NewProjectStore()), createErr: errBoom}
 	rs := memstore.NewRunStore()
 	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
 
@@ -392,7 +392,7 @@ func TestCreateTestStoreError(t *testing.T) {
 }
 
 func TestListTestsStoreError(t *testing.T) {
-	ts := &faultyTestStore{TestStore: memstore.NewTestStore(), listErr: errBoom}
+	ts := &faultyTestStore{TestStore: memstore.NewTestStore(memstore.NewProjectStore()), listErr: errBoom}
 	rs := memstore.NewRunStore()
 	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
 
@@ -408,7 +408,7 @@ func TestListTestsStoreError(t *testing.T) {
 // --- handleUpdateTest error branches ---
 
 func TestUpdateTestConflictReturns409(t *testing.T) {
-	realTS := memstore.NewTestStore()
+	realTS := memstore.NewTestStore(memstore.NewProjectStore())
 	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
 	_ = realTS.CreateTest(context.Background(), test)
 	ts := &faultyTestStore{TestStore: realTS, updateErr: store.ErrConflict}
@@ -435,7 +435,7 @@ func TestUpdateTestConflictReturns409(t *testing.T) {
 }
 
 func TestUpdateTestStoreErrorReturns500(t *testing.T) {
-	realTS := memstore.NewTestStore()
+	realTS := memstore.NewTestStore(memstore.NewProjectStore())
 	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
 	_ = realTS.CreateTest(context.Background(), test)
 	ts := &faultyTestStore{TestStore: realTS, updateErr: errBoom}
