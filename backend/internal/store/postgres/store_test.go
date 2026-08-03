@@ -1032,6 +1032,62 @@ func TestPostgresRenameProject(t *testing.T) {
 	}
 }
 
+// The default project is the one CreateTest's COALESCE fallback depends on.
+// This pins that renaming it preserves is_default not just in the value
+// RenameProject returns, but in the row itself as re-read from storage --
+// the property TestPostgresRenameProject only checks for a non-default
+// project. This test shares the database with every other postgres test, so
+// it restores the original name afterward via t.Cleanup.
+func TestPostgresRenameProjectPreservesTheDefaultFlag(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	var defaultID, originalName string
+	if err := db.Pool.QueryRow(ctx, `SELECT id, name FROM projects WHERE is_default`).Scan(&defaultID, &originalName); err != nil {
+		t.Fatalf("find default: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := db.RenameProject(context.Background(), defaultID, originalName); err != nil {
+			t.Errorf("failed to restore default project name %q: %v", originalName, err)
+		}
+	})
+
+	renamed := "Shared " + uuid.NewString()
+	got, err := db.RenameProject(ctx, defaultID, renamed)
+	if err != nil {
+		t.Fatalf("RenameProject: %v", err)
+	}
+	if !got.IsDefault {
+		t.Fatal("renaming the default project must not clear is_default in the returned value")
+	}
+
+	// Re-read from storage rather than trusting the returned value alone.
+	var isDefault bool
+	if err := db.Pool.QueryRow(ctx, `SELECT is_default FROM projects WHERE id = $1`, defaultID).Scan(&isDefault); err != nil {
+		t.Fatalf("re-read is_default: %v", err)
+	}
+	if !isDefault {
+		t.Fatal("renaming the default project must not clear is_default on the stored row")
+	}
+
+	list, err := db.ListProjects(ctx)
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	found := false
+	for _, p := range list {
+		if p.ID == defaultID {
+			found = true
+			if !p.IsDefault {
+				t.Fatalf("expected ListProjects to still report is_default for %q, got %+v", renamed, p)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected the renamed default project %q to still appear in ListProjects", renamed)
+	}
+}
+
 func TestPostgresRenameProjectConflictsOnATakenName(t *testing.T) {
 	db := setupDB(t)
 	ctx := context.Background()
