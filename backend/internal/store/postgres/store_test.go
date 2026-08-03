@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/boltrunner/backend/internal/model"
 	"github.com/boltrunner/backend/internal/store"
 )
@@ -1007,5 +1009,107 @@ func TestListTestsForProjectReturnsEmptyForAnUnknownProject(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("expected an empty slice, got %+v", got)
+	}
+}
+
+func TestPostgresRenameProject(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	p := &model.Project{Name: "Payments " + uuid.NewString()}
+	if err := db.CreateProject(ctx, p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	renamed := "Billing " + uuid.NewString()
+	got, err := db.RenameProject(ctx, p.ID, renamed)
+	if err != nil {
+		t.Fatalf("RenameProject: %v", err)
+	}
+	if got.Name != renamed {
+		t.Fatalf("expected %q, got %q", renamed, got.Name)
+	}
+	if got.IsDefault {
+		t.Fatal("a non-default project must not become default by being renamed")
+	}
+}
+
+func TestPostgresRenameProjectConflictsOnATakenName(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	a := &model.Project{Name: "A " + uuid.NewString()}
+	b := &model.Project{Name: "B " + uuid.NewString()}
+	db.CreateProject(ctx, a)
+	db.CreateProject(ctx, b)
+
+	if _, err := db.RenameProject(ctx, b.ID, a.Name); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestPostgresRenameProjectNotFound(t *testing.T) {
+	db := setupDB(t)
+	if _, err := db.RenameProject(context.Background(), uuid.NewString(), "x"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// A malformed id must not surface as a driver encode error, which the caller
+// could not distinguish from an outage.
+func TestPostgresRenameProjectMalformedIDIsNotFound(t *testing.T) {
+	db := setupDB(t)
+	if _, err := db.RenameProject(context.Background(), "not-a-uuid", "x"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestPostgresDeleteProject(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	p := &model.Project{Name: "Doomed " + uuid.NewString()}
+	db.CreateProject(ctx, p)
+
+	if err := db.DeleteProject(ctx, p.ID); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+	list, _ := db.ListProjects(ctx)
+	for _, l := range list {
+		if l.ID == p.ID {
+			t.Fatal("expected the project to be gone")
+		}
+	}
+}
+
+func TestPostgresDeleteProjectRefusesTheDefault(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	var defaultID string
+	if err := db.Pool.QueryRow(ctx, `SELECT id FROM projects WHERE is_default`).Scan(&defaultID); err != nil {
+		t.Fatalf("find default: %v", err)
+	}
+	if err := db.DeleteProject(ctx, defaultID); !errors.Is(err, store.ErrProtected) {
+		t.Fatalf("expected ErrProtected, got %v", err)
+	}
+}
+
+// The foreign key backstop: this is the path a delete takes when it races the
+// handler's emptiness check.
+func TestPostgresDeleteProjectWithTestsIsNotEmpty(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	p := &model.Project{Name: "Occupied " + uuid.NewString()}
+	db.CreateProject(ctx, p)
+	tst := &model.Test{ProjectID: p.ID, Name: "t", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	if err := db.DeleteProject(ctx, p.ID); !errors.Is(err, store.ErrNotEmpty) {
+		t.Fatalf("expected ErrNotEmpty, got %v", err)
+	}
+}
+
+func TestPostgresDeleteProjectNotFound(t *testing.T) {
+	db := setupDB(t)
+	if err := db.DeleteProject(context.Background(), uuid.NewString()); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

@@ -358,6 +358,63 @@ func (db *DB) CreateProject(ctx context.Context, p *model.Project) error {
 	return err
 }
 
+func (db *DB) RenameProject(ctx context.Context, id, name string) (*model.Project, error) {
+	// Reject a malformed id before pgx tries to encode it, for the same reason
+	// CreateTest does: an encode failure is indistinguishable by type from a
+	// genuine connection failure, and would report bad input as an outage.
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, store.ErrNotFound
+	}
+	var p model.Project
+	err := db.Pool.QueryRow(ctx,
+		`UPDATE projects SET name = $2 WHERE id = $1 RETURNING id, name, created_at, is_default`,
+		id, name,
+	).Scan(&p.ID, &p.Name, &p.CreatedAt, &p.IsDefault)
+	if err == pgx.ErrNoRows {
+		return nil, store.ErrNotFound
+	}
+	if isUniqueViolation(err) {
+		return nil, store.ErrConflict
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (db *DB) DeleteProject(ctx context.Context, id string) error {
+	if _, err := uuid.Parse(id); err != nil {
+		return store.ErrNotFound
+	}
+	// Read the flag first so a protected project is reported as such rather
+	// than as a delete that matched no rows -- DELETE ... WHERE NOT is_default
+	// would collapse "not found" and "protected" into the same zero row count.
+	var isDefault bool
+	err := db.Pool.QueryRow(ctx, `SELECT is_default FROM projects WHERE id = $1`, id).Scan(&isDefault)
+	if err == pgx.ErrNoRows {
+		return store.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if isDefault {
+		return store.ErrProtected
+	}
+	tag, err := db.Pool.Exec(ctx, `DELETE FROM projects WHERE id = $1`, id)
+	// The tests.project_id foreign key is the authoritative backstop when a
+	// delete races the handler's emptiness check.
+	if isForeignKeyViolation(err) {
+		return store.ErrNotEmpty
+	}
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 func (db *DB) CreateRun(ctx context.Context, r *model.Run) error {
 	return db.Pool.QueryRow(ctx,
 		`INSERT INTO runs (test_id, test_catalog_id, status)
