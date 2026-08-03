@@ -147,7 +147,6 @@ package postgres
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 
@@ -310,7 +309,8 @@ VALUES ('11111111-1111-1111-1111-111111111111', 'completed');`
 	if n := countDefaults(t, db); n != 1 {
 		t.Fatalf("expected exactly 1 default project, got %d", n)
 	}
-	if fmt.Sprint(got.VersionID) != got.ID {
+	// 0004 backfills catalog_id = id, so version 1's row keeps its original id.
+	if got.VersionID != got.ID {
 		t.Fatalf("expected the backfilled version row to keep its id, got %q", got.VersionID)
 	}
 }
@@ -320,7 +320,9 @@ VALUES ('11111111-1111-1111-1111-111111111111', 'completed');`
 
 ```bash
 docker run -d --rm --name br-pg-test -e POSTGRES_USER=boltrunner -e POSTGRES_PASSWORD=boltrunner -e POSTGRES_DB=boltrunner -p 5433:5432 postgres:16
-sleep 8
+# Poll rather than sleep: the agent bash tool blocks a foreground `sleep`, and a
+# fixed wait is either too short on a cold image pull or wasted time when it is not.
+until docker exec br-pg-test pg_isready -U boltrunner -q; do :; done
 cd backend && BOLTRUNNER_TEST_DSN="postgres://boltrunner:boltrunner@localhost:5433/boltrunner?sslmode=disable" go test ./internal/store/postgres/... -run 'TestMigrat' -v
 ```
 
@@ -549,20 +551,7 @@ func (s *ProjectStore) DeleteProject(ctx context.Context, id string) error {
 	delete(s.projects, id)
 	return nil
 }
-
-// exists reports whether id names a registered project. TestStore calls it to
-// validate a project reference. The dependency is deliberately one-way --
-// ProjectStore never calls into TestStore -- so holding TestStore.mu across
-// this call cannot deadlock.
-func (s *ProjectStore) exists(id string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	_, ok := s.projects[id]
-	return ok
-}
 ```
-
-`exists` is unused until Task 3. Go permits unused methods (unlike unused locals), so this compiles.
 
 - [ ] **Step 5: Run the memstore tests**
 
@@ -778,7 +767,7 @@ The memstore change is a prerequisite, not a cleanup: `memstore.go:32` rejects e
 - Test: `backend/internal/store/memstore/memstore_test.go`, `backend/internal/store/postgres/store_test.go`
 
 **Interfaces:**
-- Consumes: `ProjectStore.exists(id string) bool` from Task 2 Step 4.
+- Consumes: `ProjectStore` from Task 2. This task adds `exists` to it.
 - Produces:
   - `TestStore.MoveTest(ctx context.Context, catalogID, projectID string) error`
   - `memstore.NewTestStore(projects *ProjectStore) *TestStore` — **signature change**, callers updated in this task.
@@ -891,7 +880,22 @@ Expected: compile failure — `NewTestStore` takes no arguments, `ts.MoveTest` u
 
 - [ ] **Step 4: Implement in memstore**
 
-In `backend/internal/store/memstore/memstore.go`, change the struct and constructor:
+First add the lookup `TestStore` needs, to `backend/internal/store/memstore/projectstore.go`:
+
+```go
+// exists reports whether id names a registered project. TestStore calls it to
+// validate a project reference. The dependency is deliberately one-way --
+// ProjectStore never calls into TestStore -- so holding TestStore.mu across
+// this call cannot deadlock.
+func (s *ProjectStore) exists(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.projects[id]
+	return ok
+}
+```
+
+Then in `backend/internal/store/memstore/memstore.go`, change the struct and constructor:
 
 ```go
 type TestStore struct {
@@ -1102,6 +1106,7 @@ Expected: PASS across all 11 packages, nothing skipped in `internal/store/postgr
 ```bash
 git add backend/internal/store/store.go \
         backend/internal/store/memstore/memstore.go \
+        backend/internal/store/memstore/projectstore.go \
         backend/internal/store/memstore/memstore_test.go \
         backend/internal/store/postgres/postgres.go \
         backend/internal/store/postgres/store_test.go \
@@ -2632,15 +2637,14 @@ Expected: success, 8 routes.
 
 ```bash
 docker run -d --rm --name br-pg -e POSTGRES_USER=boltrunner -e POSTGRES_PASSWORD=boltrunner -e POSTGRES_DB=boltrunner -p 5432:5432 postgres:16
-sleep 8
+until docker exec br-pg pg_isready -U boltrunner -q; do :; done
 docker build -f deploy/Dockerfile.server -t boltrunner/server:local .
 docker run -d --rm --name br-api --network host \
   -e DATABASE_URL="postgres://boltrunner:boltrunner@localhost:5432/boltrunner?sslmode=disable" \
   -e KUBECONFIG=/kube/config -v "$HOME/.kube/config:/kube/config:ro" boltrunner/server:local
-sleep 8
-curl -sf http://localhost:8080/healthz
+until curl -sf http://localhost:8080/healthz >/dev/null; do :; done
 cd frontend && npm run build && npm start &
-sleep 5
+until curl -sf http://localhost:3000 >/dev/null; do :; done
 npx playwright test
 ```
 
