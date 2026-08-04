@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation';
 import {
   ApiError,
   listTestVersions,
+  moveTest,
   startRun,
   updateTest,
   TestVersion,
   UpdateTestInput,
 } from '@/lib/api-client';
+import { useProjects } from '@/components/ui/ProjectProvider';
 import { EditTestForm } from '@/components/EditTestForm';
 import { VersionHistoryTable } from '@/components/VersionHistoryTable';
 
@@ -23,6 +25,9 @@ export function TestDetailPanel({ testId }: { testId: string }) {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [saveError, setSaveError] = useState<string | null>(null);
   const router = useRouter();
+  const { projects } = useProjects();
+  const [destination, setDestination] = useState('');
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -36,6 +41,11 @@ export function TestDetailPanel({ testId }: { testId: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const currentProjectId = versions[0]?.project_id ?? '';
+  useEffect(() => {
+    setDestination(currentProjectId);
+  }, [currentProjectId]);
 
   async function handleSave(input: UpdateTestInput) {
     setSaveError(null);
@@ -63,6 +73,23 @@ export function TestDetailPanel({ testId }: { testId: string }) {
   async function handleRun() {
     const run = await startRun(testId);
     router.push(`/runs/${run.id}`);
+  }
+
+  async function handleMove() {
+    setMoveError(null);
+    try {
+      await moveTest(testId, destination);
+      // Leaving the page is deliberate: the scoped test list remounts and
+      // refetches, so the move is visible instead of silently stale.
+      router.push('/tests');
+    } catch (err) {
+      setMoveError(err instanceof Error ? err.message : "Couldn't move this test");
+      // The backend commits the move and only then re-reads to build the
+      // response; if that re-read fails, this catch runs even though the
+      // move already happened. Reload so the panel reflects reality (the new
+      // project) instead of the stale pre-move state the form still shows.
+      await load();
+    }
   }
 
   if (loadState === 'loading') return <p>Loading…</p>;
@@ -95,6 +122,32 @@ export function TestDetailPanel({ testId }: { testId: string }) {
       <section className="flex flex-col gap-2">
         <h3 className="font-medium text-text">Configuration</h3>
         <EditTestForm current={current} onSave={handleSave} error={saveError} />
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h3 className="font-medium text-text">Project</h3>
+        <div className="flex items-center gap-2">
+          <select
+            aria-label="Move to project"
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            className="rounded border border-border bg-surface px-2 py-1 text-sm"
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={handleMove} disabled={!destination || destination === currentProjectId}>
+            Move
+          </button>
+        </div>
+        {moveError && (
+          <p role="alert" className="text-sm text-red-600">
+            {moveError}
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-2">

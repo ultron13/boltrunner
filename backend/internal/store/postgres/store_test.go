@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/boltrunner/backend/internal/model"
 	"github.com/boltrunner/backend/internal/store"
 )
@@ -1007,5 +1009,242 @@ func TestListTestsForProjectReturnsEmptyForAnUnknownProject(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("expected an empty slice, got %+v", got)
+	}
+}
+
+func TestPostgresRenameProject(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	p := &model.Project{Name: "Payments " + uuid.NewString()}
+	if err := db.CreateProject(ctx, p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	renamed := "Billing " + uuid.NewString()
+	got, err := db.RenameProject(ctx, p.ID, renamed)
+	if err != nil {
+		t.Fatalf("RenameProject: %v", err)
+	}
+	if got.Name != renamed {
+		t.Fatalf("expected %q, got %q", renamed, got.Name)
+	}
+	if got.IsDefault {
+		t.Fatal("a non-default project must not become default by being renamed")
+	}
+}
+
+// The default project is the one CreateTest's COALESCE fallback depends on.
+// This pins that renaming it preserves is_default not just in the value
+// RenameProject returns, but in the row itself as re-read from storage --
+// the property TestPostgresRenameProject only checks for a non-default
+// project. This test shares the database with every other postgres test, so
+// it restores the original name afterward via t.Cleanup.
+func TestPostgresRenameProjectPreservesTheDefaultFlag(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+
+	var defaultID, originalName string
+	if err := db.Pool.QueryRow(ctx, `SELECT id, name FROM projects WHERE is_default`).Scan(&defaultID, &originalName); err != nil {
+		t.Fatalf("find default: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := db.RenameProject(context.Background(), defaultID, originalName); err != nil {
+			t.Errorf("failed to restore default project name %q: %v", originalName, err)
+		}
+	})
+
+	renamed := "Shared " + uuid.NewString()
+	got, err := db.RenameProject(ctx, defaultID, renamed)
+	if err != nil {
+		t.Fatalf("RenameProject: %v", err)
+	}
+	if !got.IsDefault {
+		t.Fatal("renaming the default project must not clear is_default in the returned value")
+	}
+
+	// Re-read from storage rather than trusting the returned value alone.
+	var isDefault bool
+	if err := db.Pool.QueryRow(ctx, `SELECT is_default FROM projects WHERE id = $1`, defaultID).Scan(&isDefault); err != nil {
+		t.Fatalf("re-read is_default: %v", err)
+	}
+	if !isDefault {
+		t.Fatal("renaming the default project must not clear is_default on the stored row")
+	}
+
+	list, err := db.ListProjects(ctx)
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	found := false
+	for _, p := range list {
+		if p.ID == defaultID {
+			found = true
+			if !p.IsDefault {
+				t.Fatalf("expected ListProjects to still report is_default for %q, got %+v", renamed, p)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected the renamed default project %q to still appear in ListProjects", renamed)
+	}
+}
+
+func TestPostgresRenameProjectConflictsOnATakenName(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	a := &model.Project{Name: "A " + uuid.NewString()}
+	b := &model.Project{Name: "B " + uuid.NewString()}
+	db.CreateProject(ctx, a)
+	db.CreateProject(ctx, b)
+
+	if _, err := db.RenameProject(ctx, b.ID, a.Name); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestPostgresRenameProjectNotFound(t *testing.T) {
+	db := setupDB(t)
+	if _, err := db.RenameProject(context.Background(), uuid.NewString(), "x"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// A malformed id must not surface as a driver encode error, which the caller
+// could not distinguish from an outage.
+func TestPostgresRenameProjectMalformedIDIsNotFound(t *testing.T) {
+	db := setupDB(t)
+	if _, err := db.RenameProject(context.Background(), "not-a-uuid", "x"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestPostgresDeleteProject(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	p := &model.Project{Name: "Doomed " + uuid.NewString()}
+	db.CreateProject(ctx, p)
+
+	if err := db.DeleteProject(ctx, p.ID); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+	list, _ := db.ListProjects(ctx)
+	for _, l := range list {
+		if l.ID == p.ID {
+			t.Fatal("expected the project to be gone")
+		}
+	}
+}
+
+func TestPostgresDeleteProjectRefusesTheDefault(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	var defaultID string
+	if err := db.Pool.QueryRow(ctx, `SELECT id FROM projects WHERE is_default`).Scan(&defaultID); err != nil {
+		t.Fatalf("find default: %v", err)
+	}
+	if err := db.DeleteProject(ctx, defaultID); !errors.Is(err, store.ErrProtected) {
+		t.Fatalf("expected ErrProtected, got %v", err)
+	}
+}
+
+// The foreign key backstop: this is the path a delete takes when it races the
+// handler's emptiness check.
+func TestPostgresDeleteProjectWithTestsIsNotEmpty(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	p := &model.Project{Name: "Occupied " + uuid.NewString()}
+	db.CreateProject(ctx, p)
+	tst := &model.Test{ProjectID: p.ID, Name: "t", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	if err := db.DeleteProject(ctx, p.ID); !errors.Is(err, store.ErrNotEmpty) {
+		t.Fatalf("expected ErrNotEmpty, got %v", err)
+	}
+}
+
+func TestPostgresDeleteProjectNotFound(t *testing.T) {
+	db := setupDB(t)
+	if err := db.DeleteProject(context.Background(), uuid.NewString()); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestPostgresMoveTestMovesEveryVersion(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	dest := &model.Project{Name: "Dest " + uuid.NewString()}
+	if err := db.CreateProject(ctx, dest); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	tst := &model.Test{Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	if err := db.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	edit := &model.Test{ID: tst.ID, Name: "smoke v2", TargetURL: "http://x", VirtualUsers: 2, DurationSeconds: 1}
+	if err := db.UpdateTest(ctx, edit); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+
+	if err := db.MoveTest(ctx, tst.ID, dest.ID); err != nil {
+		t.Fatalf("MoveTest: %v", err)
+	}
+
+	versions, err := db.ListTestVersions(ctx, tst.ID)
+	if err != nil {
+		t.Fatalf("ListTestVersions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(versions))
+	}
+	for _, v := range versions {
+		if v.ProjectID != dest.ID {
+			t.Fatalf("version %d stayed in %q", v.Version, v.ProjectID)
+		}
+	}
+
+	// And it is now listed under the destination rather than where it started.
+	inDest, err := db.ListTestsForProject(ctx, dest.ID)
+	if err != nil {
+		t.Fatalf("ListTestsForProject: %v", err)
+	}
+	found := false
+	for _, l := range inDest {
+		if l.ID == tst.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected the moved test to be listed in the destination project")
+	}
+}
+
+func TestPostgresMoveTestUnknownTest(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	var defaultID string
+	db.Pool.QueryRow(ctx, `SELECT id FROM projects WHERE is_default`).Scan(&defaultID)
+	if err := db.MoveTest(ctx, uuid.NewString(), defaultID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestPostgresMoveTestUnknownProject(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	tst := &model.Test{Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	db.CreateTest(ctx, tst)
+	if err := db.MoveTest(ctx, tst.ID, uuid.NewString()); !errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("expected ErrInvalidReference, got %v", err)
+	}
+}
+
+func TestPostgresMoveTestMalformedProjectID(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	tst := &model.Test{Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	db.CreateTest(ctx, tst)
+	if err := db.MoveTest(ctx, tst.ID, "not-a-uuid"); !errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("expected ErrInvalidReference, got %v", err)
 	}
 }

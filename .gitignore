@@ -4,3 +4,9 @@
 
 # Vitest writes its cache here when run from the repo root instead of frontend/
 node_modules/
+
+# Worktrees created for isolated feature work
+.claude/worktrees/
+
+# Go coverage profile from `go test -coverprofile`
+backend/coverage.out

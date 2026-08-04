@@ -146,9 +146,11 @@ describe("Shell", () => {
         </ProjectProvider>
       </ThemeProvider>,
     );
-    expect(
-      await screen.findByRole("navigation", { name: "Breadcrumb" }),
-    ).toHaveTextContent("Checkout Load");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("navigation", { name: "Breadcrumb" }),
+      ).toHaveTextContent("Checkout Load"),
+    );
   });
 
   it("falls back to the raw testId in the breadcrumb when the test is unknown", async () => {
@@ -248,7 +250,7 @@ describe("Shell", () => {
     vi.mocked(usePathname).mockReturnValue("/");
     vi.spyOn(api, "listTests").mockResolvedValue([]);
     vi.spyOn(api, "listProjects").mockResolvedValue([
-      { id: "p1", name: "Payments", created_at: "2026-07-24T00:00:00Z" },
+      { id: "p1", name: "Payments", created_at: "2026-07-24T00:00:00Z", is_default: false },
     ]);
 
     render(

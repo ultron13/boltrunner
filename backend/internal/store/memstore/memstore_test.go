@@ -6,13 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/boltrunner/backend/internal/model"
 	"github.com/boltrunner/backend/internal/store"
 )
 
 func TestTestStoreCreateListGet(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	in := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 10, DurationSeconds: 30}
 	if err := ts.CreateTest(ctx, in); err != nil {
@@ -42,7 +44,7 @@ func TestTestStoreCreateListGet(t *testing.T) {
 
 func TestCreateTestDefaultsToDefaultProject(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	in := &model.Test{Name: "no-project", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
 	if err := ts.CreateTest(ctx, in); err != nil {
@@ -63,7 +65,7 @@ func TestCreateTestDefaultsToDefaultProject(t *testing.T) {
 
 func TestCreateTestHonoursExplicitProject(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	in := &model.Test{ProjectID: DefaultProjectID, Name: "explicit", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
 	if err := ts.CreateTest(ctx, in); err != nil {
@@ -76,13 +78,15 @@ func TestCreateTestHonoursExplicitProject(t *testing.T) {
 
 // An unknown project must be rejected rather than stored, so that ListTests can
 // never report a project_id that ListProjects does not list. postgres enforces
-// this with the tests.project_id foreign key; memstore knows only Default, so
-// it rejects everything else. This test originally asserted the opposite --
-// that any explicit id was preserved -- which was written before the invalid-
-// reference contract existed.
+// this with the tests.project_id foreign key; memstore's TestStore checks the
+// id against its ProjectStore (see TestCreateTestAcceptsAnyRegisteredProject,
+// which covers the accept side -- any *registered* project, not just
+// Default). This test originally asserted the opposite -- that any explicit
+// id was preserved -- which was written before the invalid-reference contract
+// existed.
 func TestCreateTestRejectsUnknownProject(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	in := &model.Test{
 		ProjectID: "11111111-1111-1111-1111-111111111111",
@@ -103,7 +107,7 @@ func TestCreateTestRejectsUnknownProject(t *testing.T) {
 
 func TestUpdateTestCreatesNewVersionAndKeepsTheOldOne(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	v1 := &model.Test{Name: "checkout", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 10}
 	if err := ts.CreateTest(ctx, v1); err != nil {
@@ -169,7 +173,7 @@ func TestUpdateTestCreatesNewVersionAndKeepsTheOldOne(t *testing.T) {
 
 func TestUpdateTestPreservesFamilyCreatedAt(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	v1 := &model.Test{Name: "x", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
 	_ = ts.CreateTest(ctx, v1)
@@ -190,7 +194,7 @@ func TestUpdateTestPreservesFamilyCreatedAt(t *testing.T) {
 
 func TestUpdateTestDoesNotReorderListTests(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	older := &model.Test{Name: "older", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
 	_ = ts.CreateTest(ctx, older)
@@ -220,7 +224,7 @@ func TestUpdateTestDoesNotReorderListTests(t *testing.T) {
 
 func TestUpdateTestUnknownCatalogIDIsNotFound(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	err := ts.UpdateTest(ctx, &model.Test{ID: "missing", Name: "x", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1})
 	if !errors.Is(err, store.ErrNotFound) {
@@ -230,7 +234,7 @@ func TestUpdateTestUnknownCatalogIDIsNotFound(t *testing.T) {
 
 func TestListTestVersionsUnknownIDIsEmptyNotNil(t *testing.T) {
 	ctx := context.Background()
-	ts := NewTestStore()
+	ts := NewTestStore(NewProjectStore())
 
 	versions, err := ts.ListTestVersions(ctx, "missing")
 	if err != nil {
@@ -244,12 +248,14 @@ func TestListTestVersionsUnknownIDIsEmptyNotNil(t *testing.T) {
 	}
 }
 
-// memstore's TestStore has no project registry: CreateTest rejects any id but
-// the seeded Default (see its ErrInvalidReference branch). So the filter is
-// exercised here as "the seeded project versus anything else"; postgres, which
-// has a real registry, covers filtering between two populated projects.
+// memstore's TestStore does hold a project registry (a ProjectStore
+// reference; see TestCreateTestAcceptsAnyRegisteredProject, which accepts a
+// second, non-Default project). This test only checks "the seeded project
+// versus an unregistered one" because that is enough to prove the filter
+// works, not because a second registered project would behave differently;
+// postgres separately covers filtering between two populated projects.
 func TestListTestsForProjectReturnsOnlyThatProjectsTests(t *testing.T) {
-	s := NewTestStore()
+	s := NewTestStore(NewProjectStore())
 	ctx := context.Background()
 	mine := &model.Test{ProjectID: DefaultProjectID, Name: "mine", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
 	if err := s.CreateTest(ctx, mine); err != nil {
@@ -274,7 +280,7 @@ func TestListTestsForProjectReturnsOnlyThatProjectsTests(t *testing.T) {
 }
 
 func TestListTestsForProjectReturnsEmptyForAnUnknownProject(t *testing.T) {
-	s := NewTestStore()
+	s := NewTestStore(NewProjectStore())
 	got, err := s.ListTestsForProject(context.Background(), "p-nope")
 	if err != nil {
 		t.Fatalf("expected no error for an unknown project, got %v", err)
@@ -290,7 +296,7 @@ func TestListTestsForProjectReturnsEmptyForAnUnknownProject(t *testing.T) {
 // The filter must collapse each family to its latest version, exactly as
 // ListTests does -- a scoped list that showed every version would double-count.
 func TestListTestsForProjectKeepsLatestVersionOnly(t *testing.T) {
-	s := NewTestStore()
+	s := NewTestStore(NewProjectStore())
 	ctx := context.Background()
 	tst := &model.Test{ProjectID: DefaultProjectID, Name: "v1", TargetURL: "http://a", VirtualUsers: 1, DurationSeconds: 1}
 	if err := s.CreateTest(ctx, tst); err != nil {
@@ -310,5 +316,83 @@ func TestListTestsForProjectKeepsLatestVersionOnly(t *testing.T) {
 	}
 	if got[0].Name != "v2" {
 		t.Fatalf("expected the latest version, got %q", got[0].Name)
+	}
+}
+
+// A move applies to the whole family, so every version lands in the new
+// project -- otherwise ListTestsForProject and ListTestVersions would disagree
+// about where the test lives.
+func TestMoveTestMovesEveryVersion(t *testing.T) {
+	ctx := context.Background()
+	ps := NewProjectStore()
+	ts := NewTestStore(ps)
+	dest := &model.Project{Name: "Billing"}
+	if err := ps.CreateProject(ctx, dest); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	tst := &model.Test{Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	if err := ts.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	edit := &model.Test{ID: tst.ID, Name: "smoke v2", TargetURL: "http://x", VirtualUsers: 2, DurationSeconds: 1}
+	if err := ts.UpdateTest(ctx, edit); err != nil {
+		t.Fatalf("UpdateTest: %v", err)
+	}
+
+	if err := ts.MoveTest(ctx, tst.ID, dest.ID); err != nil {
+		t.Fatalf("MoveTest: %v", err)
+	}
+
+	versions, err := ts.ListTestVersions(ctx, tst.ID)
+	if err != nil {
+		t.Fatalf("ListTestVersions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(versions))
+	}
+	for _, v := range versions {
+		if v.ProjectID != dest.ID {
+			t.Fatalf("version %d stayed in %q", v.Version, v.ProjectID)
+		}
+	}
+}
+
+func TestMoveTestReturnsNotFoundForAnUnknownTest(t *testing.T) {
+	ctx := context.Background()
+	ps := NewProjectStore()
+	ts := NewTestStore(ps)
+	if err := ts.MoveTest(ctx, "no-such-test", DefaultProjectID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestMoveTestRejectsAnUnknownProject(t *testing.T) {
+	ctx := context.Background()
+	ps := NewProjectStore()
+	ts := NewTestStore(ps)
+	tst := &model.Test{Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	ts.CreateTest(ctx, tst)
+
+	if err := ts.MoveTest(ctx, tst.ID, uuid.NewString()); !errors.Is(err, store.ErrInvalidReference) {
+		t.Fatalf("expected ErrInvalidReference, got %v", err)
+	}
+}
+
+// The coupling fix: before this, CreateTest rejected every project id but the
+// seeded one, so a test could never be created in a project the user made.
+func TestCreateTestAcceptsAnyRegisteredProject(t *testing.T) {
+	ctx := context.Background()
+	ps := NewProjectStore()
+	ts := NewTestStore(ps)
+	dest := &model.Project{Name: "Billing"}
+	ps.CreateProject(ctx, dest)
+
+	tst := &model.Test{ProjectID: dest.ID, Name: "smoke", TargetURL: "http://x", VirtualUsers: 1, DurationSeconds: 1}
+	if err := ts.CreateTest(ctx, tst); err != nil {
+		t.Fatalf("expected a registered project to be accepted, got %v", err)
+	}
+	if tst.ProjectID != dest.ID {
+		t.Fatalf("expected the test to be filed under %q, got %q", dest.ID, tst.ProjectID)
 	}
 }

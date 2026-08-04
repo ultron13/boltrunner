@@ -10,6 +10,26 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
 }));
 
+const projectState = vi.hoisted(() => ({
+  projects: [
+    { id: 'p1', name: 'Default', created_at: 'x', is_default: true },
+    { id: 'p2', name: 'Payments', created_at: 'x', is_default: false },
+  ],
+  selectedId: 'p1' as string | null,
+}));
+
+vi.mock('@/components/ui/ProjectProvider', () => ({
+  useProjects: () => ({
+    projects: projectState.projects,
+    selectedId: projectState.selectedId,
+    selected: projectState.projects.find((p) => p.id === projectState.selectedId) ?? null,
+    select: vi.fn(),
+    create: vi.fn(),
+    rename: vi.fn(),
+    remove: vi.fn(),
+  }),
+}));
+
 const v2: TestVersion = {
   id: 't1',
   version_id: 'vid2',
@@ -32,7 +52,14 @@ const v1: TestVersion = {
 };
 
 describe('TestDetailPanel', () => {
-  beforeEach(() => vi.restoreAllMocks());
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    // `push` is a plain vi.fn(), not a vi.spyOn() spy, so restoreAllMocks()
+    // (which only restores spies) leaves its call history intact across
+    // tests. Later cases assert push was NOT called with a given path, which
+    // needs a clean slate rather than history accumulated from earlier tests.
+    push.mockClear();
+  });
 
   it('seeds the form from the newest version and lists every version', async () => {
     vi.spyOn(api, 'listTestVersions').mockResolvedValue([v2, v1]);
@@ -166,5 +193,88 @@ describe('TestDetailPanel', () => {
     vi.spyOn(api, 'listTestVersions').mockResolvedValue([]);
     render(<TestDetailPanel testId="t1" />);
     expect(await screen.findByText(/test not found/i)).toBeInTheDocument();
+  });
+
+  it('moves the test to the chosen project', async () => {
+    vi.spyOn(api, 'listTestVersions').mockResolvedValue([v2, v1]);
+    const moveTest = vi.spyOn(api, 'moveTest').mockResolvedValue({
+      id: 't1', name: 'smoke', target_url: 'http://x', virtual_users: 1,
+      duration_seconds: 1, created_at: 'x', project_id: 'p2',
+    });
+
+    render(<TestDetailPanel testId="t1" />);
+    await screen.findByRole('heading', { name: /Checkout Load/i });
+
+    fireEvent.change(screen.getByRole('combobox', { name: /move to project/i }), { target: { value: 'p2' } });
+    fireEvent.click(screen.getByRole('button', { name: /^move$/i }));
+
+    await waitFor(() => expect(moveTest).toHaveBeenCalledWith('t1', 'p2'));
+  });
+
+  // Staying put would leave a detail page open for a test the selected
+  // workspace no longer contains, beside a TreeNav still listing it: Shell's
+  // fetch keys on selectedId, which has not changed, so nothing refetches.
+  it('redirects to the test list after a successful move', async () => {
+    vi.spyOn(api, 'listTestVersions').mockResolvedValue([v2, v1]);
+    vi.spyOn(api, 'moveTest').mockResolvedValue({
+      id: 't1', name: 'smoke', target_url: 'http://x', virtual_users: 1,
+      duration_seconds: 1, created_at: 'x', project_id: 'p2',
+    });
+
+    render(<TestDetailPanel testId="t1" />);
+    await screen.findByRole('heading', { name: /Checkout Load/i });
+
+    fireEvent.change(screen.getByRole('combobox', { name: /move to project/i }), { target: { value: 'p2' } });
+    fireEvent.click(screen.getByRole('button', { name: /^move$/i }));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/tests'));
+  });
+
+  it('shows an error and stays put when the move fails', async () => {
+    vi.spyOn(api, 'listTestVersions').mockResolvedValue([v2, v1]);
+    vi.spyOn(api, 'moveTest').mockRejectedValue(new api.ApiError(400, 'unknown project_id'));
+
+    render(<TestDetailPanel testId="t1" />);
+    await screen.findByRole('heading', { name: /Checkout Load/i });
+
+    fireEvent.change(screen.getByRole('combobox', { name: /move to project/i }), { target: { value: 'p2' } });
+    fireEvent.click(screen.getByRole('button', { name: /^move$/i }));
+
+    expect(await screen.findByText(/unknown project_id/i)).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalledWith('/tests');
+  });
+
+  // Moving a test to the project it is already in is a no-op the user did not
+  // mean, so the button is unavailable until the selection actually changes.
+  it('disables the move button while the destination is the current project', async () => {
+    vi.spyOn(api, 'listTestVersions').mockResolvedValue([v2, v1]);
+
+    // Reordered so the test's current project ('p1') is NOT the first
+    // <option> in the DOM. A controlled <select> whose `value` matches no
+    // <option> (e.g. destination stuck at '' because the seeding effect was
+    // deleted) falls back to the browser's native "select the first option"
+    // default -- which would silently read as 'p1' below and defeat this
+    // assertion if 'p1' stayed first in the list. Restored after the test so
+    // later additions to this file are not surprised by fixture order.
+    const original = projectState.projects;
+    projectState.projects = [
+      { id: 'p2', name: 'Payments', created_at: 'x', is_default: false },
+      { id: 'p1', name: 'Default', created_at: 'x', is_default: true },
+    ];
+
+    try {
+      render(<TestDetailPanel testId="t1" />);
+      await screen.findByRole('heading', { name: /Checkout Load/i });
+
+      // Pins the reason the button is disabled: the destination was actually
+      // seeded to the test's current project (v2/v1's project_id is 'p1'),
+      // not merely left empty. Without this, deleting the seeding effect
+      // entirely leaves destination === '' forever, which also disables the
+      // button via the `!destination` clause and would pass unnoticed.
+      expect(await screen.findByRole('combobox', { name: /move to project/i })).toHaveValue('p1');
+      expect(screen.getByRole('button', { name: /^move$/i })).toBeDisabled();
+    } finally {
+      projectState.projects = original;
+    }
   });
 });

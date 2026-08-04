@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   listRunsForTest,
   listTests,
@@ -10,6 +10,9 @@ import {
   updateTest,
   listProjects,
   createProject,
+  renameProject,
+  deleteProject,
+  moveTest,
   ApiError,
 } from '@/lib/api-client';
 
@@ -261,5 +264,97 @@ describe('listTests project scoping', () => {
     await listTests();
     const url = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(url).not.toContain('project_id');
+  });
+});
+
+describe('renameProject', () => {
+  // Earlier tests in this file stub `global.fetch` via plain assignment
+  // (`global.fetch = vi.fn()...`) rather than `vi.spyOn`. restoreAllMocks
+  // can't undo a plain reassignment, so that mock function -- and its call
+  // history -- survives into these tests. vi.spyOn on an already-mocked
+  // function reuses that same instance rather than wrapping it, so without
+  // clearing here, fetchMock.mock.calls[0] would be a leftover call from
+  // whichever test ran last, not this test's own call.
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('renameProject PUTs the new name', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'p1', name: 'Billing', created_at: 'x', is_default: false }), { status: 200 })
+    );
+
+    const got = await renameProject('p1', 'Billing');
+
+    expect(got.name).toBe('Billing');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/projects/p1');
+    expect(init?.method).toBe('PUT');
+    expect(init?.body).toBe(JSON.stringify({ name: 'Billing' }));
+  });
+
+  // Unlike the other write endpoints (which go through unwrap and get a
+  // "request failed (409): " prefix), renameProject's message must be the
+  // raw server text -- the admin table renders it verbatim next to the row.
+  it('renameProject throws an ApiError carrying the status and the raw server text, with no unwrap prefix', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response('a project with that name already exists', { status: 409 }));
+    await expect(renameProject('p1', 'Default')).rejects.toMatchObject({
+      status: 409,
+      message: 'a project with that name already exists',
+    });
+    try {
+      await renameProject('p1', 'Default');
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect((err as ApiError).message).not.toContain('request failed');
+    }
+  });
+});
+
+describe('deleteProject', () => {
+  // See the comment in the renameProject describe above: a leftover
+  // global.fetch mock from an earlier plain-assignment test otherwise leaks
+  // its call history into fetchMock.mock.calls here.
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('deleteProject DELETEs and resolves on 204', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+    await expect(deleteProject('p1')).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/projects/p1');
+    expect(init?.method).toBe('DELETE');
+  });
+
+  // The 409 body is the message the admin table shows, so it has to survive.
+  it('deleteProject throws an ApiError whose message carries the server text', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response('Payments still has 3 tests; move or delete them first', { status: 409 })
+    );
+    await expect(deleteProject('p1')).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('still has 3 tests'),
+    });
+  });
+});
+
+describe('moveTest', () => {
+  // See the comment in the renameProject describe above.
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('moveTest PUTs the destination project', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 't1', name: 'x', target_url: 'http://x', virtual_users: 1, duration_seconds: 1, created_at: 'x', project_id: 'p2' }), { status: 200 })
+    );
+
+    const got = await moveTest('t1', 'p2');
+
+    expect(got.project_id).toBe('p2');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/tests/t1/project');
+    expect(init?.method).toBe('PUT');
+    expect(init?.body).toBe(JSON.stringify({ project_id: 'p2' }));
   });
 });

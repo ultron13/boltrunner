@@ -90,3 +90,99 @@ func TestCreateProjectAppearsInListProjects(t *testing.T) {
 		t.Fatalf("created project missing from ListProjects: %+v", projects)
 	}
 }
+
+func TestRenameProjectChangesTheName(t *testing.T) {
+	s := NewProjectStore()
+	p := &model.Project{Name: "Payments"}
+	if err := s.CreateProject(context.Background(), p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	got, err := s.RenameProject(context.Background(), p.ID, "Billing")
+	if err != nil {
+		t.Fatalf("RenameProject: %v", err)
+	}
+	if got.Name != "Billing" || got.ID != p.ID {
+		t.Fatalf("unexpected project: %+v", got)
+	}
+
+	list, _ := s.ListProjects(context.Background())
+	for _, l := range list {
+		if l.ID == p.ID && l.Name != "Billing" {
+			t.Fatalf("rename did not persist: %+v", l)
+		}
+	}
+}
+
+func TestRenameProjectReturnsConflictForATakenName(t *testing.T) {
+	s := NewProjectStore()
+	p := &model.Project{Name: "Payments"}
+	s.CreateProject(context.Background(), p)
+
+	// "Default" is seeded, so renaming onto it must conflict.
+	if _, err := s.RenameProject(context.Background(), p.ID, DefaultProjectName); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+// Renaming a project to the name it already has is a no-op, not a conflict
+// with itself.
+func TestRenameProjectToItsOwnNameSucceeds(t *testing.T) {
+	s := NewProjectStore()
+	p := &model.Project{Name: "Payments"}
+	s.CreateProject(context.Background(), p)
+
+	if _, err := s.RenameProject(context.Background(), p.ID, "Payments"); err != nil {
+		t.Fatalf("expected renaming to the same name to succeed, got %v", err)
+	}
+}
+
+func TestRenameProjectReturnsNotFoundForAnUnknownID(t *testing.T) {
+	s := NewProjectStore()
+	if _, err := s.RenameProject(context.Background(), "no-such-id", "Billing"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// Rename must preserve the flag: renaming the default project is the whole
+// point of Task 1, and a rename that cleared it would break test creation.
+func TestRenameProjectPreservesTheDefaultFlag(t *testing.T) {
+	s := NewProjectStore()
+	got, err := s.RenameProject(context.Background(), DefaultProjectID, "Shared")
+	if err != nil {
+		t.Fatalf("RenameProject: %v", err)
+	}
+	if !got.IsDefault {
+		t.Fatal("renaming the default project must not clear is_default")
+	}
+}
+
+func TestDeleteProjectRemovesIt(t *testing.T) {
+	s := NewProjectStore()
+	p := &model.Project{Name: "Payments"}
+	s.CreateProject(context.Background(), p)
+
+	if err := s.DeleteProject(context.Background(), p.ID); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+	list, _ := s.ListProjects(context.Background())
+	for _, l := range list {
+		if l.ID == p.ID {
+			t.Fatal("expected the project to be gone")
+		}
+	}
+}
+
+func TestDeleteProjectRefusesTheDefault(t *testing.T) {
+	s := NewProjectStore()
+	if err := s.DeleteProject(context.Background(), DefaultProjectID); !errors.Is(err, store.ErrProtected) {
+		t.Fatalf("expected ErrProtected, got %v", err)
+	}
+}
+
+func TestDeleteProjectReturnsNotFoundForAnUnknownID(t *testing.T) {
+	s := NewProjectStore()
+	if err := s.DeleteProject(context.Background(), "no-such-id"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}

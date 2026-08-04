@@ -12,8 +12,10 @@ import (
 )
 
 // testRequest is shared by create and update. ProjectID is only honoured on
-// create -- moving a test between projects belongs to the project registry
-// work (BOL-49), so an update inherits the family's existing project.
+// create -- moving a test between projects has its own route
+// (PUT /api/tests/{testID}/project, see handleMoveTest below), so an update
+// leaves the family's existing project alone rather than reinterpreting this
+// field.
 type testRequest struct {
 	Name            string `json:"name"`
 	TargetURL       string `json:"target_url"`
@@ -133,4 +135,43 @@ func (s *Server) handleListTestVersions(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(versions)
+}
+
+type moveTestRequest struct {
+	ProjectID string `json:"project_id"`
+}
+
+// handleMoveTest refiles a whole test family. It is a separate route from
+// handleUpdateTest because an edit cuts a new version and a move does not --
+// sharing one request would make it mean two different things.
+func (s *Server) handleMoveTest(w http.ResponseWriter, r *http.Request) {
+	var req moveTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if req.ProjectID == "" {
+		http.Error(w, "project_id is required", http.StatusBadRequest)
+		return
+	}
+	testID := chi.URLParam(r, "testID")
+	err := s.testStore.MoveTest(r.Context(), testID, req.ProjectID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		http.Error(w, "test not found", http.StatusNotFound)
+		return
+	case errors.Is(err, store.ErrInvalidReference):
+		http.Error(w, "unknown project_id", http.StatusBadRequest)
+		return
+	case err != nil:
+		http.Error(w, "failed to move test", http.StatusInternalServerError)
+		return
+	}
+	moved, err := s.testStore.GetTest(r.Context(), testID)
+	if err != nil {
+		http.Error(w, "failed to load test", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(moved)
 }

@@ -358,3 +358,92 @@ func TestListTestsWithoutProjectIDStaysUnfiltered(t *testing.T) {
 		t.Fatalf("expected the unfiltered list to contain the test, got %d", len(all))
 	}
 }
+
+func TestMoveTestReturns200AndTheMovedTest(t *testing.T) {
+	srv := newTestServer()
+	dest := createProjectViaAPI(t, srv, "Billing")
+
+	createRec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/api/tests",
+		strings.NewReader(`{"name":"smoke","target_url":"http://x","virtual_users":1,"duration_seconds":1}`)))
+	var created model.Test
+	json.Unmarshal(createRec.Body.Bytes(), &created)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+created.ID+"/project",
+		strings.NewReader(`{"project_id":"`+dest.ID+`"}`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var moved model.Test
+	json.Unmarshal(rec.Body.Bytes(), &moved)
+	if moved.ProjectID != dest.ID {
+		t.Fatalf("expected project %q, got %q", dest.ID, moved.ProjectID)
+	}
+
+	// And the scoped list agrees.
+	listRec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(listRec, httptest.NewRequest(http.MethodGet, "/api/tests?project_id="+dest.ID, nil))
+	var inDest []model.Test
+	json.Unmarshal(listRec.Body.Bytes(), &inDest)
+	if len(inDest) != 1 || inDest[0].ID != created.ID {
+		t.Fatalf("expected the moved test in the destination list, got %+v", inDest)
+	}
+}
+
+func TestMoveTestReturns404ForAnUnknownTest(t *testing.T) {
+	srv := newTestServer()
+	dest := createProjectViaAPI(t, srv, "Billing")
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/no-such-test/project",
+		strings.NewReader(`{"project_id":"`+dest.ID+`"}`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "test not found") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
+	}
+}
+
+func TestMoveTestReturns400ForAnUnknownProject(t *testing.T) {
+	srv := newTestServer()
+	createRec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/api/tests",
+		strings.NewReader(`{"name":"smoke","target_url":"http://x","virtual_users":1,"duration_seconds":1}`)))
+	var created model.Test
+	json.Unmarshal(createRec.Body.Bytes(), &created)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+created.ID+"/project",
+		strings.NewReader(`{"project_id":"00000000-0000-0000-0000-0000000000ff"}`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "unknown project_id") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
+	}
+}
+
+func TestMoveTestRequiresAProjectID(t *testing.T) {
+	srv := newTestServer()
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/whatever/project", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestMoveTestRejectsAMalformedBody(t *testing.T) {
+	srv := newTestServer()
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/whatever/project", strings.NewReader(`{`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}

@@ -16,9 +16,9 @@ import (
 )
 
 func newTestServer() *Server {
-	ts := memstore.NewTestStore()
-	rs := memstore.NewRunStore()
 	ps := memstore.NewProjectStore()
+	ts := memstore.NewTestStore(ps)
+	rs := memstore.NewRunStore()
 	fakeClient := k8sfake.NewSimpleClientset()
 	cfg := k8sjob.Config{Namespace: "boltrunner", JMeterImage: "jmeter:local", SidecarImage: "sidecar:local", BackendURL: "http://backend:8080"}
 	return NewServer(ts, rs, ps, fakeClient, cfg)

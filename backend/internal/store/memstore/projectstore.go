@@ -29,7 +29,7 @@ type ProjectStore struct {
 
 func NewProjectStore() *ProjectStore {
 	return &ProjectStore{projects: map[string]model.Project{
-		DefaultProjectID: {ID: DefaultProjectID, Name: DefaultProjectName, CreatedAt: time.Now().UTC()},
+		DefaultProjectID: {ID: DefaultProjectID, Name: DefaultProjectName, CreatedAt: time.Now().UTC(), IsDefault: true},
 	}}
 }
 
@@ -58,5 +58,49 @@ func (s *ProjectStore) CreateProject(ctx context.Context, p *model.Project) erro
 	p.ID = uuid.NewString()
 	p.CreatedAt = time.Now().UTC()
 	s.projects[p.ID] = *p
+	return nil
+}
+
+func (s *ProjectStore) RenameProject(ctx context.Context, id, name string) (*model.Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.projects[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	for _, existing := range s.projects {
+		// Excluding the project itself: renaming "Payments" to "Payments" is a
+		// no-op, not a conflict with its own row.
+		if existing.ID != id && existing.Name == name {
+			return nil, store.ErrConflict
+		}
+	}
+	p.Name = name
+	s.projects[id] = p
+	return &p, nil
+}
+
+// exists reports whether id names a registered project. TestStore calls it to
+// validate a project reference. The dependency is deliberately one-way --
+// ProjectStore never calls into TestStore -- so holding TestStore.mu across
+// this call cannot deadlock.
+func (s *ProjectStore) exists(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.projects[id]
+	return ok
+}
+
+func (s *ProjectStore) DeleteProject(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.projects[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if p.IsDefault {
+		return store.ErrProtected
+	}
+	delete(s.projects, id)
 	return nil
 }

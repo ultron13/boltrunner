@@ -196,7 +196,7 @@ func (db *DB) CreateTest(ctx context.Context, t *model.Test) error {
 	err := db.Pool.QueryRow(ctx,
 		`INSERT INTO tests (id, catalog_id, version, name, target_url, virtual_users, duration_seconds, project_id)
 		 VALUES ($1, $1, 1, $2, $3, $4, $5,
-		         COALESCE($6, (SELECT id FROM projects WHERE name = 'Default')))
+		         COALESCE($6, (SELECT id FROM projects WHERE is_default)))
 		 RETURNING catalog_id, id, version, project_id, created_at, created_at`,
 		id, t.Name, t.TargetURL, t.VirtualUsers, t.DurationSeconds, nullableUUID(t.ProjectID),
 	).Scan(&t.ID, &t.VersionID, &t.Version, &t.ProjectID, &t.CreatedAt, &t.UpdatedAt)
@@ -330,8 +330,34 @@ func (db *DB) updateTestAtVersion(ctx context.Context, t *model.Test, version in
 	return nil
 }
 
+// MoveTest refiles every version of a family. project_id is not part of what a
+// run executed -- jmx.Generate reads only target_url, virtual_users and
+// duration_seconds -- so rewriting it across immutable version rows changes no
+// historical run's meaning.
+func (db *DB) MoveTest(ctx context.Context, catalogID, projectID string) error {
+	// Both ids are checked before pgx encodes them, for the reason CreateTest
+	// gives: an encode failure cannot be told apart from a connection failure.
+	if _, err := uuid.Parse(projectID); err != nil {
+		return store.ErrInvalidReference
+	}
+	if _, err := uuid.Parse(catalogID); err != nil {
+		return store.ErrNotFound
+	}
+	tag, err := db.Pool.Exec(ctx, `UPDATE tests SET project_id = $2 WHERE catalog_id = $1`, catalogID, projectID)
+	if isForeignKeyViolation(err) {
+		return store.ErrInvalidReference
+	}
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
-	rows, err := db.Pool.Query(ctx, `SELECT id, name, created_at FROM projects ORDER BY name ASC`)
+	rows, err := db.Pool.Query(ctx, `SELECT id, name, created_at, is_default FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +365,7 @@ func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 	out := []model.Project{}
 	for rows.Next() {
 		var p model.Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt, &p.IsDefault); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -349,13 +375,70 @@ func (db *DB) ListProjects(ctx context.Context) ([]model.Project, error) {
 
 func (db *DB) CreateProject(ctx context.Context, p *model.Project) error {
 	err := db.Pool.QueryRow(ctx,
-		`INSERT INTO projects (name) VALUES ($1) RETURNING id, created_at`,
+		`INSERT INTO projects (name) VALUES ($1) RETURNING id, created_at, is_default`,
 		p.Name,
-	).Scan(&p.ID, &p.CreatedAt)
+	).Scan(&p.ID, &p.CreatedAt, &p.IsDefault)
 	if isUniqueViolation(err) {
 		return store.ErrConflict
 	}
 	return err
+}
+
+func (db *DB) RenameProject(ctx context.Context, id, name string) (*model.Project, error) {
+	// Reject a malformed id before pgx tries to encode it, for the same reason
+	// CreateTest does: an encode failure is indistinguishable by type from a
+	// genuine connection failure, and would report bad input as an outage.
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, store.ErrNotFound
+	}
+	var p model.Project
+	err := db.Pool.QueryRow(ctx,
+		`UPDATE projects SET name = $2 WHERE id = $1 RETURNING id, name, created_at, is_default`,
+		id, name,
+	).Scan(&p.ID, &p.Name, &p.CreatedAt, &p.IsDefault)
+	if err == pgx.ErrNoRows {
+		return nil, store.ErrNotFound
+	}
+	if isUniqueViolation(err) {
+		return nil, store.ErrConflict
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (db *DB) DeleteProject(ctx context.Context, id string) error {
+	if _, err := uuid.Parse(id); err != nil {
+		return store.ErrNotFound
+	}
+	// Read the flag first so a protected project is reported as such rather
+	// than as a delete that matched no rows -- DELETE ... WHERE NOT is_default
+	// would collapse "not found" and "protected" into the same zero row count.
+	var isDefault bool
+	err := db.Pool.QueryRow(ctx, `SELECT is_default FROM projects WHERE id = $1`, id).Scan(&isDefault)
+	if err == pgx.ErrNoRows {
+		return store.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if isDefault {
+		return store.ErrProtected
+	}
+	tag, err := db.Pool.Exec(ctx, `DELETE FROM projects WHERE id = $1`, id)
+	// The tests.project_id foreign key is the authoritative backstop when a
+	// delete races the handler's emptiness check.
+	if isForeignKeyViolation(err) {
+		return store.ErrNotEmpty
+	}
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (db *DB) CreateRun(ctx context.Context, r *model.Run) error {
