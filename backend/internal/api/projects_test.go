@@ -63,6 +63,22 @@ func TestCreateProjectAcceptsANameAtTheLimit(t *testing.T) {
 	}
 }
 
+// The 100-character limit must count runes, not bytes: a 34-character
+// Japanese name is well under the limit the error message promises, but each
+// character is 3 bytes in UTF-8, so len() on the raw string would put it over
+// 100 and reject it with a message ("100 characters or fewer") that does not
+// match what actually happened.
+func TestCreateProjectAcceptsAMultiByteNameUnderTheRuneLimit(t *testing.T) {
+	srv := newTestServer()
+	name := strings.Repeat("あ", 34) // 34 runes, 102 bytes
+	req := httptest.NewRequest(http.MethodPost, "/api/projects", strings.NewReader(`{"name":"`+name+`"}`))
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for a 34-rune (102-byte) name, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateProjectRejectsAMalformedBody(t *testing.T) {
 	srv := newTestServer()
 	req := httptest.NewRequest(http.MethodPost, "/api/projects", strings.NewReader(`{`))

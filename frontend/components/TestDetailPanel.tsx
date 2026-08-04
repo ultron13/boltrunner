@@ -84,6 +84,11 @@ export function TestDetailPanel({ testId }: { testId: string }) {
       router.push('/tests');
     } catch (err) {
       setMoveError(err instanceof Error ? err.message : "Couldn't move this test");
+      // The backend commits the move and only then re-reads to build the
+      // response; if that re-read fails, this catch runs even though the
+      // move already happened. Reload so the panel reflects reality (the new
+      // project) instead of the stale pre-move state the form still shows.
+      await load();
     }
   }
 
@@ -138,7 +143,11 @@ export function TestDetailPanel({ testId }: { testId: string }) {
             Move
           </button>
         </div>
-        {moveError && <p className="text-sm text-red-600">{moveError}</p>}
+        {moveError && (
+          <p role="alert" className="text-sm text-red-600">
+            {moveError}
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-2">

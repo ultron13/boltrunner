@@ -78,10 +78,12 @@ func TestCreateTestHonoursExplicitProject(t *testing.T) {
 
 // An unknown project must be rejected rather than stored, so that ListTests can
 // never report a project_id that ListProjects does not list. postgres enforces
-// this with the tests.project_id foreign key; memstore knows only Default, so
-// it rejects everything else. This test originally asserted the opposite --
-// that any explicit id was preserved -- which was written before the invalid-
-// reference contract existed.
+// this with the tests.project_id foreign key; memstore's TestStore checks the
+// id against its ProjectStore (see TestCreateTestAcceptsAnyRegisteredProject,
+// which covers the accept side -- any *registered* project, not just
+// Default). This test originally asserted the opposite -- that any explicit
+// id was preserved -- which was written before the invalid-reference contract
+// existed.
 func TestCreateTestRejectsUnknownProject(t *testing.T) {
 	ctx := context.Background()
 	ts := NewTestStore(NewProjectStore())
@@ -246,10 +248,12 @@ func TestListTestVersionsUnknownIDIsEmptyNotNil(t *testing.T) {
 	}
 }
 
-// memstore's TestStore has no project registry: CreateTest rejects any id but
-// the seeded Default (see its ErrInvalidReference branch). So the filter is
-// exercised here as "the seeded project versus anything else"; postgres, which
-// has a real registry, covers filtering between two populated projects.
+// memstore's TestStore does hold a project registry (a ProjectStore
+// reference; see TestCreateTestAcceptsAnyRegisteredProject, which accepts a
+// second, non-Default project). This test only checks "the seeded project
+// versus an unregistered one" because that is enough to prove the filter
+// works, not because a second registered project would behave differently;
+// postgres separately covers filtering between two populated projects.
 func TestListTestsForProjectReturnsOnlyThatProjectsTests(t *testing.T) {
 	s := NewTestStore(NewProjectStore())
 	ctx := context.Background()

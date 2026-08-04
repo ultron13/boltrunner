@@ -61,12 +61,20 @@ export default function AdminPage() {
               onChange={(e) => setDraftName(e.target.value)}
               className="rounded border border-border bg-surface px-2 py-1 text-sm"
             />
-            {error?.id === p.id && <span className="text-xs text-red-600">{error.message}</span>}
+            {error?.id === p.id && (
+              <span role="alert" className="text-xs text-red-600">
+                {error.message}
+              </span>
+            )}
           </span>
         ) : (
           <span className="flex flex-col gap-1">
             <span>{p.name}</span>
-            {error?.id === p.id && <span className="text-xs text-red-600">{error.message}</span>}
+            {error?.id === p.id && (
+              <span role="alert" className="text-xs text-red-600">
+                {error.message}
+              </span>
+            )}
           </span>
         ),
     },
@@ -117,18 +125,26 @@ export default function AdminPage() {
             <button type="button" onClick={() => startRename(p)}>
               Rename {p.name}
             </button>
-            <button
-              type="button"
-              disabled={p.is_default}
-              title={p.is_default ? DEFAULT_PROTECTED : undefined}
-              onClick={() => {
-                setEditingId(null);
-                setError(null);
-                setConfirmingId(p.id);
-              }}
-            >
-              Delete {p.name}
-            </button>
+            {/* Disabled controls get no pointer events in Chrome/Safari, so a
+                `title` on the button itself never shows a tooltip. Wrap it in
+                a span carrying the same title so the reason is still
+                discoverable on hover; the button keeps its own title too, for
+                the accessible-name/attribute assertions and browsers that do
+                honor it. */}
+            <span title={p.is_default ? DEFAULT_PROTECTED : undefined}>
+              <button
+                type="button"
+                disabled={p.is_default}
+                title={p.is_default ? DEFAULT_PROTECTED : undefined}
+                onClick={() => {
+                  setEditingId(null);
+                  setError(null);
+                  setConfirmingId(p.id);
+                }}
+              >
+                Delete {p.name}
+              </button>
+            </span>
           </span>
         );
       },

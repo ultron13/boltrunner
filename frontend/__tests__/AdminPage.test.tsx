@@ -51,6 +51,11 @@ describe('AdminPage', () => {
     fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(projectState.rename).toHaveBeenCalledWith('p2', 'Billing'));
+    // A successful rename must close the inline editor -- otherwise the row
+    // stays stuck showing the input and Save/Cancel buttons.
+    await waitFor(() =>
+      expect(within(screen.getByRole('table')).queryByRole('textbox', { name: /new name/i })).not.toBeInTheDocument()
+    );
   });
 
   it('cancelling a rename leaves the name alone', () => {
@@ -64,10 +69,14 @@ describe('AdminPage', () => {
   });
 
   // A rejected name is usually one character from an accepted one, so the row
-  // stays in edit state with what was typed still there. renameProject
-  // bypasses api-client's unwrap() and throws the raw server text (no
-  // "request failed (409): " prefix) -- mock the rejection the same shape so
-  // this test would catch a regression back to unwrap.
+  // stays in edit state with what was typed still there. The mock here
+  // rejects with the same ApiError shape renameProject throws, but that shape
+  // is asserted by mocking useProjects().rename directly -- it says nothing
+  // about renameProject's own implementation, so it would not catch a
+  // regression back to unwrap()'s "request failed (…): " prefix. That
+  // discrimination happens at the api-client boundary, in
+  // __tests__/api-client.test.ts's "renameProject throws an ApiError
+  // carrying the status and the raw server text, with no unwrap prefix".
   it('keeps the editor open and shows the error when a rename is rejected', async () => {
     projectState.rename = vi.fn().mockRejectedValue(new ApiError(409, 'a project with that name already exists'));
     render(<AdminPage />);
@@ -109,6 +118,11 @@ describe('AdminPage', () => {
     fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(projectState.remove).toHaveBeenCalledWith('p2'));
+    // A successful delete must close the confirm strip -- otherwise the row
+    // stays stuck showing "Delete Payments?" / Confirm / Cancel.
+    await waitFor(() =>
+      expect(within(screen.getByRole('table')).queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
+    );
   });
 
   it('cancelling a delete does not remove anything', () => {

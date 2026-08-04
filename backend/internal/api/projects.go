@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -41,7 +42,7 @@ func validProjectName(w http.ResponseWriter, raw string) (string, bool) {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return "", false
 	}
-	if len(name) > projectNameMaxLen {
+	if utf8.RuneCountInString(name) > projectNameMaxLen {
 		http.Error(w, "name must be 100 characters or fewer", http.StatusBadRequest)
 		return "", false
 	}

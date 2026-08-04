@@ -12,8 +12,10 @@ import (
 )
 
 // testRequest is shared by create and update. ProjectID is only honoured on
-// create -- moving a test between projects belongs to the project registry
-// work (BOL-49), so an update inherits the family's existing project.
+// create -- moving a test between projects has its own route
+// (PUT /api/tests/{testID}/project, see handleMoveTest below), so an update
+// leaves the family's existing project alone rather than reinterpreting this
+// field.
 type testRequest struct {
 	Name            string `json:"name"`
 	TargetURL       string `json:"target_url"`

@@ -94,13 +94,24 @@ test('a project must be emptied before it can be deleted', async ({ page }) => {
   await page.getByRole('button', { name: /^move$/i }).click();
   await expect(page).toHaveURL(/\/tests$/);
 
-  // Now the delete succeeds and the project leaves the switcher.
+  // Now the delete succeeds: the row is gone (a refused delete would still
+  // render it, with the name cell and the confirm strip's error text -- a
+  // count on `Delete ${project}` alone can't tell the two apart, because a
+  // refusal replaces that button with the "Delete X?" / Confirm / Cancel
+  // strip and it, too, no longer matches).
   await page.getByRole('link', { name: 'Admin' }).click();
   await page.getByRole('button', { name: `Delete ${project}` }).first().click();
   await page.getByRole('button', { name: 'Confirm' }).first().click();
-  await expect(page.getByRole('button', { name: `Delete ${project}` })).toHaveCount(0);
+  await expect(page.getByRole('row', { name: new RegExp(project) })).toHaveCount(0);
+  // And no refusal message lingers -- a delete that failed but left the row
+  // looking gone for some other reason would still leave this behind.
+  await expect(page.getByText(/still has/i)).toHaveCount(0);
 
   // Deleting the selected project falls the switcher back to Default rather
-  // than leaving it pointing at nothing.
-  await expect(page.getByRole('button', { name: /default/i }).first()).toBeVisible();
+  // than leaving it pointing at nothing. Target the switcher's own trigger
+  // (aria-haspopup="menu" in WorkspaceSwitcher.tsx) rather than a bare
+  // /default/i name match: the admin table always renders "Rename Default"
+  // and "Delete Default" for the seeded row, both of which also match
+  // /default/i and would make this assertion pass unconditionally.
+  await expect(page.locator('button[aria-haspopup="menu"]').filter({ hasText: /default/i })).toBeVisible();
 });
