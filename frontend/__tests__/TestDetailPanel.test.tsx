@@ -249,9 +249,32 @@ describe('TestDetailPanel', () => {
   it('disables the move button while the destination is the current project', async () => {
     vi.spyOn(api, 'listTestVersions').mockResolvedValue([v2, v1]);
 
-    render(<TestDetailPanel testId="t1" />);
-    await screen.findByRole('heading', { name: /Checkout Load/i });
+    // Reordered so the test's current project ('p1') is NOT the first
+    // <option> in the DOM. A controlled <select> whose `value` matches no
+    // <option> (e.g. destination stuck at '' because the seeding effect was
+    // deleted) falls back to the browser's native "select the first option"
+    // default -- which would silently read as 'p1' below and defeat this
+    // assertion if 'p1' stayed first in the list. Restored after the test so
+    // later additions to this file are not surprised by fixture order.
+    const original = projectState.projects;
+    projectState.projects = [
+      { id: 'p2', name: 'Payments', created_at: 'x', is_default: false },
+      { id: 'p1', name: 'Default', created_at: 'x', is_default: true },
+    ];
 
-    expect(screen.getByRole('button', { name: /^move$/i })).toBeDisabled();
+    try {
+      render(<TestDetailPanel testId="t1" />);
+      await screen.findByRole('heading', { name: /Checkout Load/i });
+
+      // Pins the reason the button is disabled: the destination was actually
+      // seeded to the test's current project (v2/v1's project_id is 'p1'),
+      // not merely left empty. Without this, deleting the seeding effect
+      // entirely leaves destination === '' forever, which also disables the
+      // button via the `!destination` clause and would pass unnoticed.
+      expect(await screen.findByRole('combobox', { name: /move to project/i })).toHaveValue('p1');
+      expect(screen.getByRole('button', { name: /^move$/i })).toBeDisabled();
+    } finally {
+      projectState.projects = original;
+    }
   });
 });
