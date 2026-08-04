@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import AdminPage from '@/app/admin/page';
+import { ApiError } from '@/lib/api-client';
 
 const projectState = vi.hoisted(() => ({
   projects: [] as { id: string; name: string; created_at: string; is_default: boolean }[],
@@ -63,9 +64,12 @@ describe('AdminPage', () => {
   });
 
   // A rejected name is usually one character from an accepted one, so the row
-  // stays in edit state with what was typed still there.
+  // stays in edit state with what was typed still there. renameProject
+  // bypasses api-client's unwrap() and throws the raw server text (no
+  // "request failed (409): " prefix) -- mock the rejection the same shape so
+  // this test would catch a regression back to unwrap.
   it('keeps the editor open and shows the error when a rename is rejected', async () => {
-    projectState.rename = vi.fn().mockRejectedValue(new Error('a project with that name already exists'));
+    projectState.rename = vi.fn().mockRejectedValue(new ApiError(409, 'a project with that name already exists'));
     render(<AdminPage />);
 
     fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Rename Payments' }));
@@ -74,8 +78,28 @@ describe('AdminPage', () => {
     });
     fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Save' }));
 
-    expect(await within(screen.getByRole('table')).findByText(/already exists/i)).toBeInTheDocument();
+    const message = await within(screen.getByRole('table')).findByText(/already exists/i);
+    expect(message).toBeInTheDocument();
+    expect(message.textContent).not.toContain('request failed');
     expect(within(screen.getByRole('table')).getByRole('textbox', { name: /new name/i })).toHaveValue('Default');
+  });
+
+  // Cancel used to close the editor without clearing `error`, so a rejected
+  // rename's message stayed pinned under the project name indefinitely.
+  it('cancelling a rejected rename clears the error message', async () => {
+    projectState.rename = vi.fn().mockRejectedValue(new ApiError(409, 'a project with that name already exists'));
+    render(<AdminPage />);
+
+    fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Rename Payments' }));
+    fireEvent.change(within(screen.getByRole('table')).getByRole('textbox', { name: /new name/i }), {
+      target: { value: 'Default' },
+    });
+    fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Save' }));
+    await within(screen.getByRole('table')).findByText(/already exists/i);
+
+    fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Cancel' }));
+
+    expect(within(screen.getByRole('table')).queryByText(/already exists/i)).not.toBeInTheDocument();
   });
 
   it('deletes a project after a confirmation step', async () => {
@@ -108,6 +132,25 @@ describe('AdminPage', () => {
     fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Confirm' }));
 
     expect(await within(screen.getByRole('table')).findByText(/still has 3 tests/i)).toBeInTheDocument();
+  });
+
+  // Same bug as the rename Cancel button: closing the confirm step without
+  // clearing `error` left a refused delete's message pinned under the name.
+  it('cancelling after a refused delete clears the error message', async () => {
+    projectState.remove = vi
+      .fn()
+      .mockRejectedValue(new Error('Payments still has 3 tests; move or delete them first'));
+    render(<AdminPage />);
+
+    fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Delete Payments' }));
+    fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Confirm' }));
+    await within(screen.getByRole('table')).findByText(/still has 3 tests/i);
+
+    // confirmDelete only sets `error` on failure; confirmingId is untouched,
+    // so the row is still in the confirm step and Cancel is already visible.
+    fireEvent.click(within(screen.getByRole('table')).getByRole('button', { name: 'Cancel' }));
+
+    expect(within(screen.getByRole('table')).queryByText(/still has 3 tests/i)).not.toBeInTheDocument();
   });
 
   it('disables delete on the default project and says why', () => {

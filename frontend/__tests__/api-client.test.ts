@@ -292,9 +292,21 @@ describe('renameProject', () => {
     expect(init?.body).toBe(JSON.stringify({ name: 'Billing' }));
   });
 
-  it('renameProject throws an ApiError carrying the status', async () => {
+  // Unlike the other write endpoints (which go through unwrap and get a
+  // "request failed (409): " prefix), renameProject's message must be the
+  // raw server text -- the admin table renders it verbatim next to the row.
+  it('renameProject throws an ApiError carrying the status and the raw server text, with no unwrap prefix', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValue(new Response('a project with that name already exists', { status: 409 }));
-    await expect(renameProject('p1', 'Default')).rejects.toMatchObject({ status: 409 });
+    await expect(renameProject('p1', 'Default')).rejects.toMatchObject({
+      status: 409,
+      message: 'a project with that name already exists',
+    });
+    try {
+      await renameProject('p1', 'Default');
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect((err as ApiError).message).not.toContain('request failed');
+    }
   });
 });
 

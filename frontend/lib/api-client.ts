@@ -143,13 +143,18 @@ export async function createProject(name: string): Promise<Project> {
 }
 
 export async function renameProject(id: string, name: string): Promise<Project> {
-  return unwrap(
-    await fetch(`${API_URL}/api/projects/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-  );
+  const res = await fetch(`${API_URL}/api/projects/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    // The 409 body ("a project with that name already exists") is the
+    // message the admin table shows, so -- like deleteProject -- it bypasses
+    // unwrap's "request failed (…): " prefix and reaches the caller intact.
+    throw new ApiError(res.status, await res.text());
+  }
+  return res.json() as Promise<Project>;
 }
 
 export async function deleteProject(id: string): Promise<void> {

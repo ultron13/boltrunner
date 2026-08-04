@@ -81,7 +81,13 @@ export default function AdminPage() {
               <button type="button" onClick={() => saveRename(p)}>
                 Save
               </button>
-              <button type="button" onClick={() => setEditingId(null)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingId(null);
+                  setError(null);
+                }}
+              >
                 Cancel
               </button>
             </span>
@@ -94,7 +100,13 @@ export default function AdminPage() {
               <button type="button" onClick={() => confirmDelete(p)}>
                 Confirm
               </button>
-              <button type="button" onClick={() => setConfirmingId(null)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingId(null);
+                  setError(null);
+                }}
+              >
                 Cancel
               </button>
             </span>
