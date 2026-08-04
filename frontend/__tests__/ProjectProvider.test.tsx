@@ -7,6 +7,10 @@ import type { Project } from '@/lib/api-client';
 
 const def: Project = { id: 'p1', name: 'Default', created_at: '2026-07-24T00:00:00Z', is_default: true };
 const pay: Project = { id: 'p2', name: 'Payments', created_at: '2026-07-29T00:00:00Z', is_default: false };
+// Sorts ahead of "Default" by name, so it can distinguish "prefer the
+// is_default project" from "prefer whatever sorts first" in the remove
+// fallback tests below.
+const alpha: Project = { id: 'p3', name: 'Alpha', created_at: '2026-07-23T00:00:00Z', is_default: false };
 
 function Probe() {
   const { projects, selected, select, create, rename, remove } = useProjects();
@@ -166,10 +170,12 @@ describe('ProjectProvider', () => {
 
   // Deleting the selected project must not leave the switcher pointing at
   // nothing -- the same failure the stored-id guard handles on load, reached
-  // by a different route.
+  // by a different route. Alpha sorts ahead of Default, so this also pins
+  // that the fallback prefers the is_default project over merely the first
+  // one in the sorted list -- next[0] alone would land on Alpha here.
   it('remove falls back to the default project when the selected one is deleted', async () => {
     localStorage.setItem('boltrunner-project', 'p2');
-    vi.spyOn(api, 'listProjects').mockResolvedValue([def, pay]);
+    vi.spyOn(api, 'listProjects').mockResolvedValue([alpha, def, pay]);
     vi.spyOn(api, 'deleteProject').mockResolvedValue(undefined);
 
     render(
@@ -185,10 +191,16 @@ describe('ProjectProvider', () => {
     expect(localStorage.getItem('boltrunner-project')).toBe('p1');
   });
 
-  // Deleting a project the user is not looking at must not move them.
+  // Deleting a project the user is not looking at must not move them. Selects
+  // a non-default project (Alpha) and removes a different non-default one
+  // (Payments): if the "only reassign when the removed id was selected"
+  // guard were deleted, the fallback would still coincidentally pick Alpha
+  // in the old two-fixture version of this test, so it would pass either
+  // way. With Alpha selected and left untouched, this now fails if that
+  // guard is removed.
   it('remove leaves the selection alone when another project is deleted', async () => {
-    localStorage.setItem('boltrunner-project', 'p1');
-    vi.spyOn(api, 'listProjects').mockResolvedValue([def, pay]);
+    localStorage.setItem('boltrunner-project', 'p3');
+    vi.spyOn(api, 'listProjects').mockResolvedValue([alpha, def, pay]);
     vi.spyOn(api, 'deleteProject').mockResolvedValue(undefined);
 
     render(
@@ -196,12 +208,12 @@ describe('ProjectProvider', () => {
         <Probe />
       </ProjectProvider>
     );
-    await waitFor(() => expect(screen.getByTestId('selected')).toHaveTextContent('Default'));
+    await waitFor(() => expect(screen.getByTestId('selected')).toHaveTextContent('Alpha'));
 
     fireEvent.click(screen.getByText('remove payments'));
 
-    await waitFor(() => expect(screen.getByTestId('count')).toHaveTextContent('1'));
-    expect(screen.getByTestId('selected')).toHaveTextContent('Default');
+    await waitFor(() => expect(screen.getByTestId('count')).toHaveTextContent('2'));
+    expect(screen.getByTestId('selected')).toHaveTextContent('Alpha');
   });
 
   // The 409 body is what the admin table renders, so remove must reject rather

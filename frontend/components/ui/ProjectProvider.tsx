@@ -73,6 +73,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     await deleteProject(id);
     setProjects((prev) => {
       const next = prev.filter((p) => p.id !== id);
+      // Nested in setProjects' updater so the fallback sees the post-removal list.
+      // This makes the updater impure: React double-invokes updaters under
+      // StrictMode, so this body -- including the localStorage write -- runs twice in
+      // dev. Harmless only because both runs see the same `current` and the write is
+      // idempotent. Do NOT add a non-idempotent side effect here (a fetch, an
+      // analytics event, a counter): it would silently fire twice in `next dev`.
       setSelectedId((current) => {
         if (current !== id) return current;
         // The selected project just went away. Falling back to the default
