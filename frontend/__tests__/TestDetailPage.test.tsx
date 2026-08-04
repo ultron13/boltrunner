@@ -8,6 +8,22 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+// TestDetailPanel now reads useProjects() for the "move to project" control.
+// A real ProjectProvider would pull this test's render in on listProjects()
+// too, which is not what this test is about; stub it the same way
+// TestDetailPanel.test.tsx does.
+vi.mock('@/components/ui/ProjectProvider', () => ({
+  useProjects: () => ({
+    projects: [{ id: 'p1', name: 'Default', created_at: 'x', is_default: true }],
+    selectedId: 'p1',
+    selected: { id: 'p1', name: 'Default', created_at: 'x', is_default: true },
+    select: vi.fn(),
+    create: vi.fn(),
+    rename: vi.fn(),
+    remove: vi.fn(),
+  }),
+}));
+
 describe('TestDetailPage', () => {
   beforeEach(() => vi.restoreAllMocks());
 
