@@ -403,6 +403,9 @@ func TestMoveTestReturns404ForAnUnknownTest(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
+	if !strings.Contains(rec.Body.String(), "test not found") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
+	}
 }
 
 func TestMoveTestReturns400ForAnUnknownProject(t *testing.T) {
@@ -419,6 +422,9 @@ func TestMoveTestReturns400ForAnUnknownProject(t *testing.T) {
 	srv.Router().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "unknown project_id") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
 	}
 }
 

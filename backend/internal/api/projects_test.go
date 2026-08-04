@@ -161,31 +161,47 @@ func TestRenameProjectReturns200AndTheNewName(t *testing.T) {
 func TestRenameProjectReturns409ForATakenName(t *testing.T) {
 	srv := newTestServer()
 	p := createProjectViaAPI(t, srv, "Payments")
-	if rec := renameProjectViaAPI(srv, p.ID, "Default"); rec.Code != http.StatusConflict {
+	rec := renameProjectViaAPI(srv, p.ID, "Default")
+	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "a project with that name already exists") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
 	}
 }
 
 func TestRenameProjectReturns404ForAnUnknownID(t *testing.T) {
 	srv := newTestServer()
-	if rec := renameProjectViaAPI(srv, "no-such-id", "Billing"); rec.Code != http.StatusNotFound {
+	rec := renameProjectViaAPI(srv, "no-such-id", "Billing")
+	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "project not found") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
 	}
 }
 
 func TestRenameProjectRejectsABlankName(t *testing.T) {
 	srv := newTestServer()
 	p := createProjectViaAPI(t, srv, "Payments")
-	if rec := renameProjectViaAPI(srv, p.ID, "   "); rec.Code != http.StatusBadRequest {
+	rec := renameProjectViaAPI(srv, p.ID, "   ")
+	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "name is required") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
 	}
 }
 
 func TestRenameProjectRejectsAnOverlongName(t *testing.T) {
 	srv := newTestServer()
 	p := createProjectViaAPI(t, srv, "Payments")
-	if rec := renameProjectViaAPI(srv, p.ID, strings.Repeat("a", 101)); rec.Code != http.StatusBadRequest {
+	rec := renameProjectViaAPI(srv, p.ID, strings.Repeat("a", 101))
+	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "name must be 100 characters or fewer") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
 	}
 }
 
@@ -240,8 +256,12 @@ func TestDeleteProjectReturns204AndRemovesIt(t *testing.T) {
 
 func TestDeleteProjectReturns404ForAnUnknownID(t *testing.T) {
 	srv := newTestServer()
-	if rec := deleteProjectViaAPI(srv, "no-such-id"); rec.Code != http.StatusNotFound {
+	rec := deleteProjectViaAPI(srv, "no-such-id")
+	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "project not found") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
 	}
 }
 

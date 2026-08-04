@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	k8stesting "k8s.io/client-go/testing"
@@ -30,10 +31,12 @@ var errBoom = errors.New("boom")
 // backing store implementation.
 type faultyTestStore struct {
 	*memstore.TestStore
-	getErr    error
-	createErr error
-	listErr   error
-	updateErr error
+	getErr            error
+	createErr         error
+	listErr           error
+	updateErr         error
+	listForProjectErr error
+	moveErr           error
 }
 
 func (f *faultyTestStore) GetTest(ctx context.Context, id string) (*model.Test, error) {
@@ -62,6 +65,46 @@ func (f *faultyTestStore) ListTests(ctx context.Context) ([]model.Test, error) {
 		return nil, f.listErr
 	}
 	return f.TestStore.ListTests(ctx)
+}
+
+func (f *faultyTestStore) ListTestsForProject(ctx context.Context, projectID string) ([]model.Test, error) {
+	if f.listForProjectErr != nil {
+		return nil, f.listForProjectErr
+	}
+	return f.TestStore.ListTestsForProject(ctx, projectID)
+}
+
+func (f *faultyTestStore) MoveTest(ctx context.Context, catalogID, projectID string) error {
+	if f.moveErr != nil {
+		return f.moveErr
+	}
+	return f.TestStore.MoveTest(ctx, catalogID, projectID)
+}
+
+// faultyProjectStore wraps a real in-memory ProjectStore and lets individual
+// tests force specific methods to fail, without needing a second real
+// backing store implementation. It embeds the same *memstore.ProjectStore
+// that the accompanying TestStore is built on (see newServerWithStores
+// callers below) so the two never disagree about what projects exist --
+// only the call this test cares about is intercepted.
+type faultyProjectStore struct {
+	*memstore.ProjectStore
+	listErr   error
+	deleteErr error
+}
+
+func (f *faultyProjectStore) ListProjects(ctx context.Context) ([]model.Project, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.ProjectStore.ListProjects(ctx)
+}
+
+func (f *faultyProjectStore) DeleteProject(ctx context.Context, id string) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	return f.ProjectStore.DeleteProject(ctx, id)
 }
 
 // faultyRunStore wraps a real in-memory RunStore with the same knobs.
@@ -117,8 +160,12 @@ func (f *faultyRunStore) ListSnapshots(ctx context.Context, runID string) ([]mod
 	return f.RunStore.ListSnapshots(ctx, runID)
 }
 
-func newServerWithStores(ts store.TestStore, rs store.RunStore, k8sClient *k8sfake.Clientset) *Server {
-	ps := memstore.NewProjectStore()
+// newServerWithStores takes ps explicitly (rather than building one itself)
+// so a test that needs a real, non-default project can wire the exact same
+// store the TestStore was built on through to the server -- see the
+// package-level warning above faultyProjectStore. Callers that don't care
+// pass a fresh memstore.NewProjectStore().
+func newServerWithStores(ts store.TestStore, rs store.RunStore, ps store.ProjectStore, k8sClient *k8sfake.Clientset) *Server {
 	cfg := k8sjob.Config{Namespace: "boltrunner", JMeterImage: "jmeter:local", SidecarImage: "sidecar:local", BackendURL: "http://backend:8080"}
 	return NewServer(ts, rs, ps, k8sClient, cfg)
 }
@@ -128,7 +175,7 @@ func newServerWithStores(ts store.TestStore, rs store.RunStore, k8sClient *k8sfa
 func TestStartRunGetTestStoreError(t *testing.T) {
 	ts := &faultyTestStore{TestStore: memstore.NewTestStore(memstore.NewProjectStore()), getErr: errBoom}
 	rs := memstore.NewRunStore()
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tests/anything/runs", nil)
 	rec := httptest.NewRecorder()
@@ -144,7 +191,7 @@ func TestStartRunCreateRunError(t *testing.T) {
 	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
 	_ = ts.CreateTest(context.Background(), test)
 	rs := &faultyRunStore{RunStore: memstore.NewRunStore(), createErr: errBoom}
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tests/"+test.ID+"/runs", nil)
 	rec := httptest.NewRecorder()
@@ -160,7 +207,7 @@ func TestStartRunInvalidTargetURLFailsPlanGeneration(t *testing.T) {
 	test := &model.Test{Name: "smoke", TargetURL: "not-a-url", VirtualUsers: 5, DurationSeconds: 10}
 	_ = ts.CreateTest(context.Background(), test)
 	rs := memstore.NewRunStore()
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tests/"+test.ID+"/runs", nil)
 	rec := httptest.NewRecorder()
@@ -185,7 +232,7 @@ func TestStartRunConfigMapCreateError(t *testing.T) {
 	fakeClient.PrependReactor("create", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errBoom
 	})
-	s := newServerWithStores(ts, rs, fakeClient)
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), fakeClient)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tests/"+test.ID+"/runs", nil)
 	rec := httptest.NewRecorder()
@@ -205,7 +252,7 @@ func TestStartRunJobCreateError(t *testing.T) {
 	fakeClient.PrependReactor("create", "jobs", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errBoom
 	})
-	s := newServerWithStores(ts, rs, fakeClient)
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), fakeClient)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tests/"+test.ID+"/runs", nil)
 	rec := httptest.NewRecorder()
@@ -232,7 +279,7 @@ func TestPostMetricsInvalidBody(t *testing.T) {
 func TestPostMetricsStoreError(t *testing.T) {
 	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	rs := &faultyRunStore{RunStore: memstore.NewRunStore(), appendErr: errBoom}
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	body, _ := json.Marshal(map[string]any{"elapsed_seconds": 1})
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/anything/metrics", bytes.NewReader(body))
@@ -249,7 +296,7 @@ func TestPostMetricsStoreError(t *testing.T) {
 func TestGetRunStoreError(t *testing.T) {
 	ts := memstore.NewTestStore(memstore.NewProjectStore())
 	rs := &faultyRunStore{RunStore: memstore.NewRunStore(), getErr: errBoom}
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/runs/anything", nil)
 	rec := httptest.NewRecorder()
@@ -266,7 +313,7 @@ func TestGetRunListSnapshotsError(t *testing.T) {
 	run := &model.Run{TestID: "t1", Status: model.RunRunning}
 	_ = realRS.CreateRun(context.Background(), run)
 	rs := &faultyRunStore{RunStore: realRS, listSnapErr: errBoom}
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/runs/"+run.ID, nil)
 	rec := httptest.NewRecorder()
@@ -288,7 +335,7 @@ func TestCancelRunJobDeleteError(t *testing.T) {
 	fakeClient.PrependReactor("delete", "jobs", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errBoom
 	})
-	s := newServerWithStores(ts, rs, fakeClient)
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), fakeClient)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+run.ID+"/cancel", nil)
 	rec := httptest.NewRecorder()
@@ -305,7 +352,7 @@ func TestCancelRunUpdateStatusError(t *testing.T) {
 	run := &model.Run{TestID: "t1", Status: model.RunRunning}
 	_ = realRS.CreateRun(context.Background(), run)
 	rs := &faultyRunStore{RunStore: realRS, updateStatusErr: errBoom}
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodPost, "/api/runs/"+run.ID+"/cancel", nil)
 	rec := httptest.NewRecorder()
@@ -321,7 +368,7 @@ func TestCancelRunUpdateStatusError(t *testing.T) {
 func TestListRunsForTestGetTestStoreError(t *testing.T) {
 	ts := &faultyTestStore{TestStore: memstore.NewTestStore(memstore.NewProjectStore()), getErr: errBoom}
 	rs := memstore.NewRunStore()
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tests/anything/runs", nil)
 	rec := httptest.NewRecorder()
@@ -337,7 +384,7 @@ func TestListRunsForTestListByTestError(t *testing.T) {
 	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 5, DurationSeconds: 10}
 	_ = ts.CreateTest(context.Background(), test)
 	rs := &faultyRunStore{RunStore: memstore.NewRunStore(), listErr: errBoom}
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tests/"+test.ID+"/runs", nil)
 	rec := httptest.NewRecorder()
@@ -376,7 +423,7 @@ func TestCreateTestMissingFields(t *testing.T) {
 func TestCreateTestStoreError(t *testing.T) {
 	ts := &faultyTestStore{TestStore: memstore.NewTestStore(memstore.NewProjectStore()), createErr: errBoom}
 	rs := memstore.NewRunStore()
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	body, _ := json.Marshal(map[string]any{
 		"name": "smoke", "target_url": "http://example.com",
@@ -394,7 +441,7 @@ func TestCreateTestStoreError(t *testing.T) {
 func TestListTestsStoreError(t *testing.T) {
 	ts := &faultyTestStore{TestStore: memstore.NewTestStore(memstore.NewProjectStore()), listErr: errBoom}
 	rs := memstore.NewRunStore()
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tests", nil)
 	rec := httptest.NewRecorder()
@@ -413,7 +460,7 @@ func TestUpdateTestConflictReturns409(t *testing.T) {
 	_ = realTS.CreateTest(context.Background(), test)
 	ts := &faultyTestStore{TestStore: realTS, updateErr: store.ErrConflict}
 	rs := memstore.NewRunStore()
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	body, _ := json.Marshal(map[string]any{
 		"name": "smoke-renamed", "target_url": "http://example.com",
@@ -440,13 +487,190 @@ func TestUpdateTestStoreErrorReturns500(t *testing.T) {
 	_ = realTS.CreateTest(context.Background(), test)
 	ts := &faultyTestStore{TestStore: realTS, updateErr: errBoom}
 	rs := memstore.NewRunStore()
-	s := newServerWithStores(ts, rs, k8sfake.NewSimpleClientset())
+	s := newServerWithStores(ts, rs, memstore.NewProjectStore(), k8sfake.NewSimpleClientset())
 
 	body, _ := json.Marshal(map[string]any{
 		"name": "smoke-renamed", "target_url": "http://example.com",
 		"virtual_users": 10, "duration_seconds": 30,
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+test.ID, bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- handleDeleteProject error branches ---
+//
+// Every test in this block shares one real *memstore.ProjectStore between
+// the TestStore and the (possibly faulty) ProjectStore passed to the
+// server. Building the TestStore on a *different* ProjectStore than the one
+// the handler queries would let the two disagree about which projects
+// exist -- exactly the trap called out on faultyProjectStore above.
+
+func TestDeleteProjectListProjectsErrorReturns500(t *testing.T) {
+	realPS := memstore.NewProjectStore()
+	proj := &model.Project{Name: "Payments"}
+	_ = realPS.CreateProject(context.Background(), proj)
+	ps := &faultyProjectStore{ProjectStore: realPS, listErr: errBoom}
+	ts := memstore.NewTestStore(realPS)
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, ps, k8sfake.NewSimpleClientset())
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/projects/"+proj.ID, nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeleteProjectListTestsForProjectErrorReturns500(t *testing.T) {
+	realPS := memstore.NewProjectStore()
+	proj := &model.Project{Name: "Payments"}
+	_ = realPS.CreateProject(context.Background(), proj)
+	realTS := memstore.NewTestStore(realPS)
+	ts := &faultyTestStore{TestStore: realTS, listForProjectErr: errBoom}
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, realPS, k8sfake.NewSimpleClientset())
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/projects/"+proj.ID, nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A DeleteProject call that returns ErrNotFound simulates a project deleted
+// by a concurrent request between the handler's existence check and the
+// delete itself.
+func TestDeleteProjectStoreNotFoundReturns404(t *testing.T) {
+	realPS := memstore.NewProjectStore()
+	proj := &model.Project{Name: "Payments"}
+	_ = realPS.CreateProject(context.Background(), proj)
+	ps := &faultyProjectStore{ProjectStore: realPS, deleteErr: store.ErrNotFound}
+	ts := memstore.NewTestStore(realPS)
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, ps, k8sfake.NewSimpleClientset())
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/projects/"+proj.ID, nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ErrProtected out of DeleteProject itself is unreachable in production --
+// is_default is only ever set by migration 0005, so the handler's own
+// IsDefault check above always catches it first. It is exercised here only
+// to prove the branch still maps to the right status if the store ever
+// grows a second way to protect a project; it is not a real runtime path.
+func TestDeleteProjectStoreProtectedReturns409(t *testing.T) {
+	realPS := memstore.NewProjectStore()
+	proj := &model.Project{Name: "Payments"}
+	_ = realPS.CreateProject(context.Background(), proj)
+	ps := &faultyProjectStore{ProjectStore: realPS, deleteErr: store.ErrProtected}
+	ts := memstore.NewTestStore(realPS)
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, ps, k8sfake.NewSimpleClientset())
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/projects/"+proj.ID, nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "default project cannot be deleted") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
+	}
+}
+
+// ErrNotEmpty out of DeleteProject itself simulates a test filed under the
+// project between the handler's count and the delete. The message must not
+// repeat a count -- re-reading it now would report a number already stale.
+func TestDeleteProjectStoreNotEmptyReturns409(t *testing.T) {
+	realPS := memstore.NewProjectStore()
+	proj := &model.Project{Name: "Payments"}
+	_ = realPS.CreateProject(context.Background(), proj)
+	ps := &faultyProjectStore{ProjectStore: realPS, deleteErr: store.ErrNotEmpty}
+	ts := memstore.NewTestStore(realPS)
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, ps, k8sfake.NewSimpleClientset())
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/projects/"+proj.ID, nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Payments still has tests; move or delete them first") {
+		t.Fatalf("unexpected message: %s", rec.Body.String())
+	}
+}
+
+func TestDeleteProjectStoreErrorReturns500(t *testing.T) {
+	realPS := memstore.NewProjectStore()
+	proj := &model.Project{Name: "Payments"}
+	_ = realPS.CreateProject(context.Background(), proj)
+	ps := &faultyProjectStore{ProjectStore: realPS, deleteErr: errBoom}
+	ts := memstore.NewTestStore(realPS)
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, ps, k8sfake.NewSimpleClientset())
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/projects/"+proj.ID, nil)
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- handleMoveTest error branches ---
+
+func TestMoveTestStoreErrorReturns500(t *testing.T) {
+	realPS := memstore.NewProjectStore()
+	dest := &model.Project{Name: "Billing"}
+	_ = realPS.CreateProject(context.Background(), dest)
+	realTS := memstore.NewTestStore(realPS)
+	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
+	_ = realTS.CreateTest(context.Background(), test)
+	ts := &faultyTestStore{TestStore: realTS, moveErr: errBoom}
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, realPS, k8sfake.NewSimpleClientset())
+
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+test.ID+"/project",
+		strings.NewReader(`{"project_id":"`+dest.ID+`"}`))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMoveTestGetTestErrorAfterMoveReturns500(t *testing.T) {
+	realPS := memstore.NewProjectStore()
+	dest := &model.Project{Name: "Billing"}
+	_ = realPS.CreateProject(context.Background(), dest)
+	realTS := memstore.NewTestStore(realPS)
+	test := &model.Test{Name: "smoke", TargetURL: "http://example.com", VirtualUsers: 1, DurationSeconds: 1}
+	_ = realTS.CreateTest(context.Background(), test)
+	ts := &faultyTestStore{TestStore: realTS, getErr: errBoom}
+	rs := memstore.NewRunStore()
+	s := newServerWithStores(ts, rs, realPS, k8sfake.NewSimpleClientset())
+
+	req := httptest.NewRequest(http.MethodPut, "/api/tests/"+test.ID+"/project",
+		strings.NewReader(`{"project_id":"`+dest.ID+`"}`))
 	rec := httptest.NewRecorder()
 	s.Router().ServeHTTP(rec, req)
 
