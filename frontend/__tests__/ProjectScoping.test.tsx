@@ -13,7 +13,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: vi.fn(() => new URLSearchParams()),
 }));
 
-const pay: Project = { id: 'p2', name: 'Payments', created_at: '2026-07-29T00:00:00Z' };
+const pay: Project = { id: 'p2', name: 'Payments', created_at: '2026-07-29T00:00:00Z', is_default: false };
 
 const created: Test = {
   id: 't1',

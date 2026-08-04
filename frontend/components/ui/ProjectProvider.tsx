@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
-import { listProjects, createProject, Project } from '@/lib/api-client';
+import { listProjects, createProject, renameProject, deleteProject, Project } from '@/lib/api-client';
 
 const STORAGE_KEY = 'boltrunner-project';
 
@@ -11,6 +11,8 @@ type ProjectContextValue = {
   selected: Project | null;
   select: (id: string) => void;
   create: (name: string) => Promise<Project>;
+  rename: (id: string, name: string) => Promise<Project>;
+  remove: (id: string) => Promise<void>;
 };
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
@@ -56,10 +58,39 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return project;
   }, []);
 
+  const rename = useCallback(async (id: string, name: string) => {
+    const updated = await renameProject(id, name);
+    // Re-sorted for the same reason create sorts: both stores return
+    // ListProjects ordered by name, so an unsorted local list would reshuffle
+    // the menu on the next reload.
+    setProjects((prev) =>
+      prev.map((p) => (p.id === id ? updated : p)).sort((a, b) => a.name.localeCompare(b.name))
+    );
+    return updated;
+  }, []);
+
+  const remove = useCallback(async (id: string) => {
+    await deleteProject(id);
+    setProjects((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      setSelectedId((current) => {
+        if (current !== id) return current;
+        // The selected project just went away. Falling back to the default
+        // keeps the switcher pointing at something real -- the same guard the
+        // load path applies to a stored id that outlived its database.
+        const fallback = next.find((p) => p.is_default)?.id ?? next[0]?.id ?? null;
+        if (fallback) localStorage.setItem(STORAGE_KEY, fallback);
+        else localStorage.removeItem(STORAGE_KEY);
+        return fallback;
+      });
+      return next;
+    });
+  }, []);
+
   const selected = projects.find((p) => p.id === selectedId) ?? null;
 
   return (
-    <ProjectContext.Provider value={{ projects, selectedId, selected, select, create }}>
+    <ProjectContext.Provider value={{ projects, selectedId, selected, select, create, rename, remove }}>
       {children}
     </ProjectContext.Provider>
   );

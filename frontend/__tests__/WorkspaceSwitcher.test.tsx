@@ -6,8 +6,8 @@ import * as api from '@/lib/api-client';
 import { ApiError } from '@/lib/api-client';
 import type { Project } from '@/lib/api-client';
 
-const def: Project = { id: 'p1', name: 'Default', created_at: '2026-07-24T00:00:00Z' };
-const pay: Project = { id: 'p2', name: 'Payments', created_at: '2026-07-29T00:00:00Z' };
+const def: Project = { id: 'p1', name: 'Default', created_at: '2026-07-24T00:00:00Z', is_default: true };
+const pay: Project = { id: 'p2', name: 'Payments', created_at: '2026-07-29T00:00:00Z', is_default: false };
 
 function renderSwitcher(projects: Project[] = [def, pay]) {
   vi.spyOn(api, 'listProjects').mockResolvedValue(projects);
@@ -81,6 +81,7 @@ describe('WorkspaceSwitcher', () => {
       id: 'p9',
       name: 'Payments',
       created_at: '2026-07-29T00:00:00Z',
+      is_default: false,
     });
     await open();
 
@@ -100,6 +101,7 @@ describe('WorkspaceSwitcher', () => {
       id: 'p9',
       name: 'Payments',
       created_at: '2026-07-29T00:00:00Z',
+      is_default: false,
     });
     await open();
 

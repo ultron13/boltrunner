@@ -248,7 +248,7 @@ describe("Shell", () => {
     vi.mocked(usePathname).mockReturnValue("/");
     vi.spyOn(api, "listTests").mockResolvedValue([]);
     vi.spyOn(api, "listProjects").mockResolvedValue([
-      { id: "p1", name: "Payments", created_at: "2026-07-24T00:00:00Z" },
+      { id: "p1", name: "Payments", created_at: "2026-07-24T00:00:00Z", is_default: false },
     ]);
 
     render(
