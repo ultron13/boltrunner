@@ -146,9 +146,11 @@ describe("Shell", () => {
         </ProjectProvider>
       </ThemeProvider>,
     );
-    expect(
-      await screen.findByRole("navigation", { name: "Breadcrumb" }),
-    ).toHaveTextContent("Checkout Load");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("navigation", { name: "Breadcrumb" }),
+      ).toHaveTextContent("Checkout Load"),
+    );
   });
 
   it("falls back to the raw testId in the breadcrumb when the test is unknown", async () => {
