@@ -7,3 +7,6 @@ node_modules/
 
 # Worktrees created for isolated feature work
 .claude/worktrees/
+
+# Go coverage profile from `go test -coverprofile`
+backend/coverage.out
